@@ -43,7 +43,11 @@
     </div>
 </form>
 
+<br>
+<br>
+
 <form class="form-save_expertises"  th:action="@{/finmonitoring/v1/save_res}" method="get">
+    <h3>Save new expertise:</h3>
     <input id="save_expertises" type="submit" value="create new expertise"/>
 </form>
 
@@ -53,6 +57,7 @@
 <br>
 
 <form class="form-upd_expertises" th:action="@{/finmonitoring/v1/expertises/expertise(id=${id})}" action="upd_res.html" method="get">
+    <h3>Update expertise:</h3>
     <input class="form-control"
            type="text"
            th:value="${id}" id="id" th:name="id" placeholder="Id" required autofocus/>
