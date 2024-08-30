@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.w3.org/1999/xhtml">
+
+<head>
+    <title>Workspace</title>
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+    <link href="../static/public/css/style.css" type="text/css" rel="stylesheet"/>
+</head>
+<body>
+
+<div class="container">
+    <form class="form-logout" th:action="@{/logout}" method="post">
+        <input id="logout" type="submit" value="Log Out"/>
+    </form>
+    <form class="form-auth-data" th:action="@{/users/v1/user_authorities}" method="get">
+        <input id="auth_data" type="submit" value="About me"/>
+    </form>
+
+</div>
+
+<h1 class="header_text">Services</h1>
+
+<div class="wrapper" style="display:flex; flex-direction: row; justify-content: left; align-items: center">
+    <label class= "lbl_expertises">Bankruptcies</label>
+    <form class="form-expertises">
+        <input id="bankruptcies" type="submit" value="to service"/>
+    </form>
+</div>
+
+<div class="wrapper" style="display:flex; flex-direction: row; justify-content: left; align-items: center">
+    <label class= "lbl_expertises">Audit</label>
+    <form class="form-expertises">
+        <input id="audit" type="submit" value="to service"/>
+    </form>
+</div>
+
+
+</body>
+</html>

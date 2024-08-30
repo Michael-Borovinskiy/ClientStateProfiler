@@ -1,0 +1,25 @@
+spring:
+  messages:
+    encoding: UTF-8
+
+  application:
+    name: migration_app
+
+  datasource:
+    url: jdbc:postgresql://0.0.0.0:15432/
+    username: mike1
+    password: nnm
+    driverClassName: org.postgresql.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: none
+    database-platform: org.hibernate.dialect.PostgreSQLDialect
+
+  flyway:
+    enabled: true
+    url: jdbc:postgresql://0.0.0.0:15432/
+    user: mike1
+    password: nnm
+    locations: classpath:db.migration
+    schemas: PUBLIC
