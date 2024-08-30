@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.w3.org/1999/xhtml">
+
+<head>
+    <title>Expertises</title>
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+    <link href="../../../../../GatewayApp/src/main/resources/static/public/css/style.css" type="text/css" rel="stylesheet"/>
+</head>
+<body>
+
+<div class="container">
+    <form class="form-logout" th:action="@{/logout}" method="post">
+        <input id="logout" type="submit" value="Log Out"/>
+    </form>
+    <form class="form-auth-data" th:action="@{/users/v1/user_authorities}" method="get">
+        <input id="auth_data" type="submit" value="About me"/>
+    </form>
+    <form class="back" th:action="@{/}" method="get">
+        <input id="back" type="submit" value="Back"/>
+    </form>
+
+</div>
+
+<h1 class="header_text">Expertises</h1>
+
+<form id="expertiseByClientId" th:action="@{/finmonitoring/v1/expertises/expertise(clientId=${clientId})}" action="found_res.html" th:method="get" >
+    <h3>Find expertises:</h3>
+    <input class="form-control"
+           type="text"
+           th:value="${clientId}" id="clientId" th:name="clientId" placeholder="Client Id" required autofocus/>
+    <br>
+    <br>
+    <div class="row">
+        <button type="submit" th:text="Find">Find</button>
+        <a href="../../../../../GatewayApp/src/main/resources/templates/index.html" th:href="@{/}"><button type="button" th:text="Cancel">Cancel</button></a>
+    </div>
+</form>
+
+<form id="expertisesAll" th:action="@{/finmonitoring/v1/expertises}" action="found_res.html" th:method="get" >
+    <h3>All expertises:</h3>
+    <div class="row">
+        <button type="submit" th:text="Find">Find</button>
+    </div>
+</form>
+
+<form class="form-save_expertises"  th:action="@{/finmonitoring/v1/save_res}" method="get">
+    <input id="save_expertises" type="submit" value="create new expertise"/>
+</form>
+
+<br>
+<br>
+<br>
+<br>
+
+<form class="form-upd_expertises" th:action="@{/finmonitoring/v1/expertises/expertise(id=${id})}" action="upd_res.html" method="get">
+    <input class="form-control"
+           type="text"
+           th:value="${id}" id="id" th:name="id" placeholder="Id" required autofocus/>
+    <br>
+    <br>
+    <input id="upd_expertises" type="submit" value="update expertise"/>
+</form>
+
+</body>
+</html>

@@ -21,6 +21,13 @@
 <h1 class="header_text">Services</h1>
 
 <div class="wrapper" style="display:flex; flex-direction: row; justify-content: left; align-items: center">
+    <label class= "lbl_expertises">Financial Monitoring</label>
+    <form class="form-expertises" th:action="@{/finmonitoring/v1/expertises_main}" method="get">
+        <input id="expertises" type="submit" value="to service"/>
+    </form>
+</div>
+
+<div class="wrapper" style="display:flex; flex-direction: row; justify-content: left; align-items: center">
     <label class= "lbl_expertises">Bankruptcies</label>
     <form class="form-expertises">
         <input id="bankruptcies" type="submit" value="to service"/>
