@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.w3.org/1999/xhtml">
+
+<head>
+    <title>Self info</title>
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+    <link href="../static/public/css/style.css" type="text/css" rel="stylesheet"/>
+</head>
+<body>
+
+<div class="container">
+    <form class="back" th:action="@{/}" method="get">
+        <input id="back" type="submit" value="Back"/>
+    </form>
+</div>
+
+<h1 class="header_text">Self info</h1>
+
+<p>
+    <label for="id" class="sr-only">Id: </label>
+    <input type="text"
+           disabled="true"
+           th:value="${selfinfo.id}" id="id" th:name="id" placeholder="Id" required autofocus/>
+</p>
+
+<p>
+    <label for="login" class="sr-only">Username: </label>
+    <input type="text"
+           disabled="true"
+           th:value="${selfinfo.login}" id="login" th:name="login" placeholder="Login" required autofocus/>
+</p>
+
+<p>
+    <label for="granted_authority" class="sr-only">Granted Authority: </label>
+    <input type="text"
+           disabled="true"
+           th:value="${selfinfo.granted_authority}" id="granted_authority" th:name="granted_authority" placeholder="Granted Authority" required autofocus/>
+</p>
+
+</body>
+
+</html>

@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.w3.org/1999/xhtml">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+  <meta name="description" content="Sign Up">
+  <meta name="author" content="">
+  <title>Sign Up</title>
+  <link href="../static/public/css/style.css" type="text/css" rel="stylesheet"/>
+</head>
+<body>
+<div class="UserRequestBody">
+  <form class="form-signup" method="post" th:action="@{/users/v1/users}">
+    <h2 class="form-signup-heading">Please sign up</h2>
+
+    <p>
+      <label for="login" class="UserRequestBody">Username</label>
+      <input type="text" id="login" name="login" class="form-control" placeholder="Username" required autofocus>
+    </p>
+    <p>
+      <label for="psw" class="UserRequestBody">Password</label>
+      <input type="password" id="psw" name="psw" class="form-control" placeholder="Password" required>
+    </p>
+    <button class="btn btn-lg btn-primary btn-block" type="submit">Sign up</button>
+  </form>
+</div>
+
+</body>
+</html>

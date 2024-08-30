@@ -1,0 +1,140 @@
+body{
+  padding: 120px;
+  background-color: Azure;
+}
+
+.form-signup input[type="text"] {
+  margin-bottom: -1px;
+  border-bottom-right-radius: 0;
+  border-bottom-left-radius: 0;
+}
+
+.form-signup input[type="password"] {
+  margin-left: 6px;
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+}
+
+.form-signin input[type="text"] {
+  margin-bottom: -1px;
+  border-bottom-right-radius: 0;
+  border-bottom-left-radius: 0;
+}
+
+.form-signin input[type="password"] {
+  margin-left: 6px;
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+}
+
+.form-logout input[type="submit"] {
+   background: #609e9f;
+   color: white;
+   border: none;
+   padding: 10px;
+   font: inherit;
+   font-size: 1.6rem;
+   cursor: pointer;
+   outline: inherit;
+   border-radius: 7px;
+   box-shadow: 5px 5px 5px #000;
+
+   position: absolute;
+   right: 50px;
+   top: 35px;
+   border-top-left-radius: 0;
+   border-top-right-radius: 0;
+ }
+
+.back input[type="submit"] {
+  background: #609e9f;
+  color: white;
+  border: none;
+  padding: 10px;
+  font: inherit;
+  font-size: 1.6rem;
+  cursor: pointer;
+  outline: inherit;
+  border-radius: 7px;
+  box-shadow: 5px 5px 5px #000;
+
+  position: absolute;
+  left: 210px;
+  top: 35px;
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+}
+
+.header_text {
+   top: 0px;
+}
+
+.form-auth-data input[type="submit"] {
+   background: #609e9f;
+   color: white;
+   border: none;
+   padding: 10px;
+   font: inherit;
+   font-size: 1.6rem;
+   cursor: pointer;
+   outline: inherit;
+   border-radius: 7px;
+   box-shadow: 5px 5px 5px #000;
+
+   position: absolute;
+   left: 50px;
+   top: 35px;
+   border-top-left-radius: 0;
+   border-top-right-radius: 0;
+ }
+
+.wrapper{
+   --b: .5em;
+ 	--c: 3em;
+ 	--r: 2em;
+   position: relative;
+ 	margin: 1em auto;
+ 	border: solid var(--b) transparent;
+   padding: 10px;
+ 	max-width: 500px;
+ 	height: 100px;
+ 	font: 1.25em ubuntu, sans-serif;
+
+ 	&::before {
+ 		position: absolute;
+ 		z-index: -1;
+ 		inset: calc(-1*var(--b));
+ 		border: inherit;
+ 		border-radius: var(--r);
+ 		background: linear-gradient(#609e9f, blue, Aquamarine) border-box;
+ 		--corner:
+ 			conic-gradient(from -90deg at var(--c) var(--c), blue 25%, #0000 0)
+ 				0 0/ calc(100% - var(--c))  calc(100% - var(--c)) border-box;
+ 		--inner: conic-gradient(Aquamarine 0 0) padding-box;
+ 		-webkit-mask: var(--corner), var(--inner);
+ 		-webkit-mask-composite: source-out;
+ 						mask: var(--corner) subtract, var(--inner);
+ 		content: ''
+ }
+
+.lbl_expertises {
+   align-content: 10px;
+   padding-inline: .5em .4em;
+ }
+
+.form-expertises input[type="submit"] {
+   background: #9cdeff;
+   color: white;
+   border: none;
+   padding: 3px;
+   font: inherit;
+   font-size: 1.2rem;
+   cursor: pointer;
+   outline: inherit;
+   border-radius: 3px;
+   box-shadow: 2px 2px 2px #000;
+
+
+   align-content: center;
+   padding-inline: .2em .2em;
+ }
