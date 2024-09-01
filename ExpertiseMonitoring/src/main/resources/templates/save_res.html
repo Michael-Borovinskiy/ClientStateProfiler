@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.w3.org/1999/xhtml">
+
+<head>
+    <title>Save new Expertise</title>
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+    <link href="../../../../../GatewayApp/src/main/resources/static/public/css/style.css" type="text/css" rel="stylesheet"/>
+</head>
+<body>
+
+<div class="container">
+    <form class="back" th:action="@{/finmonitoring/v1/expertises_main}" method="get">
+        <input id="back" type="submit" value="Back"/>
+    </form>
+    <form class="form-auth-data" th:action="@{/users/v1/user_authorities}" method="get">
+        <input id="auth_data" type="submit" value="About me"/>
+    </form>
+</div>
+
+<h1 class="header_text">Save new Expertise</h1>
+
+<form id="savedExpertise" th:action="@{/finmonitoring/v1/expertises}" action="found_res.html" th:method="post" th:object="${savedExpertise}" >
+    <h3>Save expertise:</h3>
+    <input class="form-control"
+           type="text"
+           th:value="${expertiseType}" id="expertiseType" th:name="expertiseType" placeholder="Expertise Type" required autofocus/>
+    <input class="form-control"
+           type="text"
+           th:value="${clientId}" id="clientId" th:name="clientId" placeholder="Client Id" required autofocus/>
+    <input class="form-control"
+           type="text"
+           th:value="${status}" id="status" th:name="status" placeholder="Status" required autofocus/>
+    <input class="form-control"
+           type="text"
+           th:value="${comment}" id="comment" th:name="comment" placeholder="Comment" required autofocus/>
+    <div class="row">
+        <button type="submit" th:text="Save">Save</button>
+    </div>
+</form>
+
+</body>
+</html>

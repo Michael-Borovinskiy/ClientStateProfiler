@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.w3.org/1999/xhtml">
+
+<head>
+    <title>Found Results</title>
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+    <link href="../../../../../GatewayApp/src/main/resources/static/public/css/style.css" type="text/css" rel="stylesheet"/>
+</head>
+<body>
+
+<div class="container">
+    <form class="back" th:action="@{/finmonitoring/v1/expertises_main}" method="get">
+        <input id="back" type="submit" value="Back"/>
+    </form>
+    <form class="form-auth-data" th:action="@{/users/v1/user_authorities}" method="get">
+        <input id="auth_data" type="submit" value="About me"/>
+    </form>
+</div>
+
+<h1 class="header_text">Found Results</h1>
+
+
+<table class="ExpertiseMonitoringDto">
+    <thead>
+    <tr>
+        <th>Id</th>
+        <th>Type</th>
+        <th>Client Id</th>
+        <th>Status</th>
+        <th>Comment</th>
+        <th>Update datetime</th>
+    </tr>
+    </thead>
+    <tbody>
+    <tr th:each="expertises : ${expertisesAll != null ? expertisesAll : expertisesByClientId}">
+        <td th:text="${expertises.id}"></td>
+        <td th:text="${expertises.expertiseType}"></td>
+        <td th:text="${expertises.clientId}"></td>
+        <td th:text="${expertises.status}"></td>
+        <td th:text="${expertises.comment}"></td>
+        <td th:text="${expertises.dtExpertiseStatus}"></td>
+    </tr>
+    </tbody>
+</table>
+
+</body>
+</html>

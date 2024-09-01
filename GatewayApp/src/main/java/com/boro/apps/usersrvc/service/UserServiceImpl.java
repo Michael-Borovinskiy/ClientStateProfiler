@@ -47,7 +47,7 @@ public class UserServiceImpl implements ReactiveUserDetailsService, UserService 
 
         return userRepo.existsByLogin(userRequestBody.login()).flatMap(isRegistered -> {
             if (isRegistered) {
-                return Mono.error(new UserAlreadyExistException("Missing email field in the JWT token"));
+                return Mono.error(new UserAlreadyExistException("The account with this login has already exists"));
             }
             return userRepo.save(new User(userRequestBody.login(), passwordEncoder.encode(userRequestBody.psw()), UserRoles.ROLE_USER.name()))
                     .map(User::toDto);

@@ -1,0 +1,20 @@
+spring:
+  messages:
+    encoding: UTF-8
+
+  application:
+    name: monitoring_expertise_application
+
+  datasource:
+    url: jdbc:postgresql://0.0.0.0:15432/
+    username: mike1
+    password: ENC(Dkh8b8epohII27BSx31zIg==)
+    driverClassName: org.postgresql.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: none
+    database-platform: org.hibernate.dialect.PostgreSQLDialect
+
+server:
+  port: 8084
