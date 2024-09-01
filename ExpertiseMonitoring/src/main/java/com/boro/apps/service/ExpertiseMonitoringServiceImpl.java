@@ -48,7 +48,7 @@ public class ExpertiseMonitoringServiceImpl implements ExpertiseMonitoringServic
                 .clientId(expertiseMonitoring.clientId())
                 .status(expertiseMonitoring.status())
                 .comment(expertiseMonitoring.comment())
-                .dtExpertiseStatus(new Timestamp(System.currentTimeMillis())) //new Timestamp(System.currentTimeMillis()) expertiseMonitoring.dtExpertiseStatus()
+                .dtExpertiseStatus(new Timestamp(System.currentTimeMillis()))
                 .build()).toDto();
     }
 
