@@ -6,7 +6,7 @@
         <file>./logs/expertises.log</file>
         <encoder
                 class="ch.qos.logback.classic.encoder.PatternLayoutEncoder">
-            <Pattern>%d{yyyy-MM-dd} %msg%n</Pattern>
+            <Pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level [%thread] %logger - %msg%n</Pattern>
         </encoder>
         <rollingPolicy
                 class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
