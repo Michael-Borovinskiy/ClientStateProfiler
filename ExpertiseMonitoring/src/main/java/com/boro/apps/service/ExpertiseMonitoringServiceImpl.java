@@ -6,9 +6,10 @@ import com.boro.apps.domain.ExpertiseMonitoringDto;
 import com.boro.apps.domain.ExpertiseType;
 import com.boro.apps.repo.ExpertiseMonitoringRepository;
 import lombok.AllArgsConstructor;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-
 
 import java.sql.Timestamp;
 import java.util.List;
@@ -19,6 +20,7 @@ import java.util.stream.Collectors;
 @AllArgsConstructor
 public class ExpertiseMonitoringServiceImpl implements ExpertiseMonitoringService {
 
+    private static final Logger log = LoggerFactory.getLogger(ExpertiseMonitoringServiceImpl.class);
     private final ExpertiseMonitoringRepository expertiseMonitoringRepository;
 
     @Override
@@ -30,6 +32,7 @@ public class ExpertiseMonitoringServiceImpl implements ExpertiseMonitoringServic
     @Override
     @Transactional(readOnly = true)
     public List<ExpertiseMonitoringDto> getExpertiseMonitoringByClientId(String clientId) {
+        log.info("get ExpertiseMonitoringByClientId:" + clientId);
         return expertiseMonitoringRepository.findByClientId(clientId).stream().map(ExpertiseMonitoring::toDto).collect(Collectors.toList());
     }
 
