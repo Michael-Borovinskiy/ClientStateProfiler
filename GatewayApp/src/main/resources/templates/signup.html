@@ -9,6 +9,13 @@
   <link href="../static/public/css/style.css" type="text/css" rel="stylesheet"/>
 </head>
 <body>
+
+<div>
+  <form class="back" th:action="@{/}" method="get">
+    <input id="back" type="submit" value="Back"/>
+  </form>
+</div>
+
 <div class="UserRequestBody">
   <form class="form-signup" method="post" th:action="@{/users/v1/users}">
     <h2 class="form-signup-heading">Please sign up</h2>
