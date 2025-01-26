@@ -16,5 +16,10 @@ spring:
       ddl-auto: none
     database-platform: org.hibernate.dialect.PostgreSQLDialect
 
+  mvc:
+    hiddenmethod:
+      filter:
+        enabled: true
+
 server:
   port: 8084

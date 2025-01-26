@@ -19,7 +19,7 @@
 
 <h1 class="header_text">Update expertise</h1>
 
-<form id="editedExpertise" th:action="@{/finmonitoring/v1/expertises/expertise(id=${expertiseById.id})}" action="found_res.html" th:method="post" th:object="${editedExpertise}" >
+<form id="editedExpertise" th:action="@{/finmonitoring/v1/expertises(id=${expertiseById.id})}" action="found_res.html" th:method="patch" th:object="${editedExpertise}" >
     <h3>Update expertise:</h3>
     <input class="editedExpertise"
            type="text"

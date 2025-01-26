@@ -31,6 +31,9 @@
         <th>Update datetime</th>
     </tr>
     </thead>
+    <p th:text="${searchedId != null ? 'id: ' + searchedId + ' не найден' : null}"></p>
+    <br>
+    <br>
     <tbody>
     <tr th:each="expertises : ${expertisesAll != null ? expertisesAll : expertisesByClientId}">
         <td th:text="${expertises.id}"></td>

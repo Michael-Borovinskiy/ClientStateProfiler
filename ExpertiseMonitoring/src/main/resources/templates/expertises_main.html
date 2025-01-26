@@ -23,7 +23,7 @@
 
 <h1 class="header_text">Expertises</h1>
 
-<form id="expertiseByClientId" th:action="@{/finmonitoring/v1/expertises/expertise(clientId=${clientId})}" action="found_res.html" th:method="get" >
+<form id="expertiseByClientId" th:action="@{/finmonitoring/v1/expertises(clientId=${clientId})}" action="found_res.html" th:method="get" >
     <h3>Find expertises:</h3>
     <input class="form-control"
            type="text"
@@ -56,7 +56,7 @@
 <br>
 <br>
 
-<form class="form-upd_expertises" th:action="@{/finmonitoring/v1/expertises/expertise(id=${id})}" action="upd_res.html" method="get">
+<form class="form-upd_expertises" th:action="@{/finmonitoring/v1/expertises(id=${id})}" action="upd_res.html" method="get">
     <h3>Update expertise:</h3>
     <input class="form-control"
            type="text"

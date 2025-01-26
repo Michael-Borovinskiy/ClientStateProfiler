@@ -67,19 +67,7 @@ public class ExpertiseMonitoringServiceImpl implements ExpertiseMonitoringServic
                     expertise.setComment(expertiseMonitoring.comment());
                     expertise.setDtExpertiseStatus(new Timestamp(System.currentTimeMillis()));
                     return expertiseMonitoringRepository.save(expertise).toDto();
-                })
-                .orElseGet(() ->
-                {
-                    var expertise = ExpertiseMonitoring.builder()
-                            .expertiseType(ExpertiseType.valueOf(expertiseMonitoring.expertiseType()))
-                            .clientId(expertiseMonitoring.clientId())
-                            .status(expertiseMonitoring.status())
-                            .comment(expertiseMonitoring.comment())
-                            .dtExpertiseStatus(new Timestamp(System.currentTimeMillis()))
-                            .build();
-
-                    return expertiseMonitoringRepository.save(expertise).toDto();
-                });
+                }).orElseThrow(NullPointerException::new);
     }
 
     @Override
