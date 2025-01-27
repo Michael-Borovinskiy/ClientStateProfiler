@@ -1,7 +1,6 @@
 package com.boro.apps.controllers;
 
 
-import com.boro.apps.domain.ExpertiseMonitoring;
 import com.boro.apps.domain.ExpertiseMonitoringDto;
 import com.boro.apps.service.ExpertiseMonitoringServiceImpl;
 import lombok.RequiredArgsConstructor;
@@ -20,21 +19,27 @@ public class ExpertiseMonitoringController {
     private static final Logger log = LoggerFactory.getLogger(ExpertiseMonitoringController.class);
 
     @GetMapping("/expertises")
-    public String getAllExpertisesMonitoring(Model model) {
-        model.addAttribute("expertisesAll", expertiseMonitoringService.getAll());
-        return "found_res";
-    }
-
-    @GetMapping("/expertises/expertise")
-    public String getExpertiseMonitoringByIdClientId(@RequestParam(name = "id", required = false) Long id,
+    public String getExpertises(@RequestParam(name = "id", required = false) Long id,
                                                      @RequestParam(name = "clientId", required = false) String clientId, Model model) {
 
         log.info("getExpertiseMonitoringByIdClientId with id: " + id + " and clientId: " + clientId);
         if (id != null && clientId == null) {
-            model.addAttribute("expertiseById", expertiseMonitoringService.getExpertiseMonitoring(id).orElseGet(new ExpertiseMonitoring()::toDto));
-            return "upd_res";
-        } else {
+
+            if(expertiseMonitoringService.getExpertiseMonitoring(id).isPresent() ) {
+                model.addAttribute("expertiseById", expertiseMonitoringService.getExpertiseMonitoring(id).get());
+                return "upd_res";
+            }else {
+                model.addAttribute("expertisesAll", expertiseMonitoringService.getAll());
+                model.addAttribute("searchedId", id);
+                return "found_res";
+            }
+
+        } else if(id == null && clientId != null) {
             model.addAttribute("expertisesByClientId", expertiseMonitoringService.getExpertiseMonitoringByClientId(clientId));
+            return "found_res";
+        }
+        else {
+            model.addAttribute("expertisesAll", expertiseMonitoringService.getAll());
             return "found_res";
         }
     }
@@ -47,7 +52,7 @@ public class ExpertiseMonitoringController {
         return "found_res";
     }
 
-    @PostMapping("/expertises/expertise")
+    @PatchMapping("/expertises")
     public String editExpertiseMonitoring(@RequestParam(name = "id", required = false) Long id, @ModelAttribute("editedExpertise") ExpertiseMonitoringDto expertiseMonitoring, Model model) {
         var expertise = expertiseMonitoringService.editExpertiseMonitoring(expertiseMonitoring, id);
 
@@ -55,7 +60,7 @@ public class ExpertiseMonitoringController {
         return "found_res";
     }
 
-    @DeleteMapping("/expertises/expertise/{id}")
+    @DeleteMapping("/expertises/{id}")
     public String deleteExpertiseMonitoring(@PathVariable("id") Long id) {
         expertiseMonitoringService.removeExpertiseMonitoringById(id);
         return "expertises";
