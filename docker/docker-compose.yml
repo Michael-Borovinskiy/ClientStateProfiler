@@ -16,7 +16,7 @@ services:
       dockerfile: Dockerfile
     container_name: expertise_monitoring
     env_file:
-      - .env2
+      - .env_sc
     ports:
       - "8084:8084"
     depends_on:
@@ -29,7 +29,7 @@ services:
       dockerfile: Dockerfile
     container_name: gateway_app
     env_file:
-      - .env2
+      - .env_sc
     ports:
       - "8085:8085"
     depends_on:
