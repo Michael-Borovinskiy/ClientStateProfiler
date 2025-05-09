@@ -1,4 +1,4 @@
-FROM maven:3.5-jdk-17 AS build
+FROM maven:3-eclipse-temurin-17 AS build
 COPY src /usr/src/migrate/src
 COPY pom.xml /usr/src/migrate
 RUN mvn -f /usr/src/migrate/pom.xml clean package
