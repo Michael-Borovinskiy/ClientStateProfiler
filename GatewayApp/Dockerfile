@@ -1,4 +1,4 @@
-FROM maven:3.5-jdk-17 AS build
+FROM maven:3-eclipse-temurin-17 AS build
 COPY src /usr/src/gatewayapp/src
 COPY pom.xml /usr/src/gatewayapp
 RUN mvn -f /usr/src/gatewayapp/pom.xml clean package

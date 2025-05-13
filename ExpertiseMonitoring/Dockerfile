@@ -1,4 +1,4 @@
-FROM maven:3.5-jdk-17 AS build
+FROM maven:3-eclipse-temurin-17 AS build
 COPY src /usr/src/expertisemonitoring/src
 COPY pom.xml /usr/src/expertisemonitoring
 RUN mvn -f /usr/src/expertisemonitoring/pom.xml clean package
