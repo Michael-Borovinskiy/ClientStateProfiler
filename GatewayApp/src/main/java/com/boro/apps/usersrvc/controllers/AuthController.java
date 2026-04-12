@@ -17,7 +17,6 @@ import reactor.core.publisher.Mono;
 @RequestMapping("/users/v1")
 public class AuthController {
 
-    @Autowired
     private final UserService userService;
 
     @GetMapping("/users")

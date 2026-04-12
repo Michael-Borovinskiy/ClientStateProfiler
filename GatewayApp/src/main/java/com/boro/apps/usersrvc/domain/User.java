@@ -30,26 +30,9 @@ public class User implements UserDetails {
     @Column("granted_authority")
     private String grantedAuthority;
 
-    public Long getId() {
-        return id;
-    }
-
-    public String getLogin() {
-        return login;
-    }
-
-    public String getPassword() {
-        return password;
-    }
-
-    public String getGrantedAuthority() {
-        return grantedAuthority;
-    }
-
-
     @Override
     public Collection<? extends GrantedAuthority> getAuthorities() {
-        return List.of((GrantedAuthority) this::getGrantedAuthority);
+        return List.of(() -> grantedAuthority);
     }
 
     @Override
