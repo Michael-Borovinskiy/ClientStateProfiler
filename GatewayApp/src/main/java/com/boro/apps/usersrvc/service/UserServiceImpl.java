@@ -5,6 +5,8 @@ import com.boro.apps.usersrvc.domain.UserDto;
 import com.boro.apps.usersrvc.domain.UserRequestBody;
 import com.boro.apps.usersrvc.domain.UserRoles;
 import com.boro.apps.usersrvc.exceptions.UserAlreadyExistException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.ReactiveSecurityContextHolder;
@@ -19,6 +21,7 @@ import reactor.core.publisher.Mono;
 @Service
 public class UserServiceImpl implements ReactiveUserDetailsService, UserService {
 
+    private static final Logger log = LoggerFactory.getLogger(UserServiceImpl.class);
     private final PasswordEncoder passwordEncoder;
     private final UserRepo userRepo;
 
@@ -50,7 +53,8 @@ public class UserServiceImpl implements ReactiveUserDetailsService, UserService 
                 return Mono.error(new UserAlreadyExistException("The account with this login has already exists"));
             }
             return userRepo.save(new User(userRequestBody.login(), passwordEncoder.encode(userRequestBody.psw()), UserRoles.ROLE_MONITORING_USER.name()))
-                    .map(User::toDto);
+                    .map(User::toDto)
+                    .doOnNext(userDto -> log.info("New user registered: {}", userDto));
         });
     }
 
