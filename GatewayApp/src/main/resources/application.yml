@@ -24,3 +24,36 @@ spring:
             - Path=/finmonitoring/v1/**
 server:
   port: 8085
+security:
+  paths:
+    public-get:
+      - /login
+      - /signup
+      - /logout
+      - /static/public/css/*
+      - /GatewayApp/src/main/resources/static/public/css/*
+      - /users/static/public/css/*
+    public-post:
+      - /users/v1/users
+    authenticated-get:
+      - /users/v1/users/*
+      - /logout
+      - /
+      - /users/v1/user_authorities
+      - /selfinfo
+    admin-get:
+      - /users/v1/users
+    monitoring-get:
+      - /finmonitoring/v1/*
+      - /finmonitoring/v1/*/*
+      - /expertises
+      - /found_res
+      - /save_res
+      - /upd_res
+      - /GatewayApp/src/main/resources/templates/*
+      - /ExpertiseMonitoringService/src/main/resources/templates/*
+    monitoring-post:
+      - /found_res
+      - /finmonitoring/v1/*
+      - /finmonitoring/v1/*/*
+      - /index
