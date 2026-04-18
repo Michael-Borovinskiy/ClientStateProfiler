@@ -64,7 +64,7 @@ public class SecurityPathsProperties {
         return monitoringPost;
     }
 
-    public void setMonitoringWrite(List<String> monitoringPost) {
+    public void setMonitoringPost(List<String> monitoringPost) {
         this.monitoringPost = monitoringPost;
     }
 }
