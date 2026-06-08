@@ -1,7 +1,13 @@
-version: '3.1'
+version: '3.4'
 services:
   db_postgres_client_profiler:
     image: 'postgres:latest'
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d default"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
     container_name: db_postgres
     ports:
       - "15432:5432"
@@ -20,7 +26,8 @@ services:
     ports:
       - "15432:5432"
     depends_on:
-      - db_postgres_client_profiler
+      db_postgres_client_profiler:
+        condition: service_healthy
     network_mode: host
 
 
@@ -34,7 +41,8 @@ services:
     ports:
       - "8084:8084"
     depends_on:
-      - db_postgres_client_profiler
+      db_postgres_client_profiler:
+        condition: service_healthy
     network_mode: host
 
   gateway_app:
@@ -47,6 +55,8 @@ services:
     ports:
       - "8085:8085"
     depends_on:
-      - db_postgres_client_profiler
-      - expertise_monitoring
+      db_postgres_client_profiler:
+        condition: service_healthy
+      expertise_monitoring:
+        condition: service_started
     network_mode: host
