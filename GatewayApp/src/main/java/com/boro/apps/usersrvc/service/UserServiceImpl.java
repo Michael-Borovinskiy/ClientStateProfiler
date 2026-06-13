@@ -8,6 +8,7 @@ import com.boro.apps.usersrvc.exceptions.UserAlreadyExistException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.annotation.Lazy;
+import org.springframework.http.HttpStatus;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.ReactiveSecurityContextHolder;
 import org.springframework.security.core.context.SecurityContext;
@@ -15,6 +16,8 @@ import org.springframework.security.core.userdetails.ReactiveUserDetailsService;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.web.ErrorResponse;
+import org.springframework.web.reactive.function.server.ServerResponse;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
@@ -46,11 +49,11 @@ public class UserServiceImpl implements ReactiveUserDetailsService, UserService 
     }
 
     @Override
-    public Mono<UserDto> signUp(UserRequestBody userRequestBody) throws UserAlreadyExistException {
+    public Mono<Object> signUp(UserRequestBody userRequestBody) throws UserAlreadyExistException {
 
         return userRepo.existsByLogin(userRequestBody.login()).flatMap(isRegistered -> {
             if (isRegistered) {
-                return Mono.error(new UserAlreadyExistException("The account with this login has already exists"));
+                return Mono.error(new UserAlreadyExistException("The account with this login has already exists")).onErrorReturn("user_exist");
             }
             return userRepo.save(new User(userRequestBody.login(), passwordEncoder.encode(userRequestBody.psw()), UserRoles.ROLE_MONITORING_USER.name()))
                     .map(User::toDto)

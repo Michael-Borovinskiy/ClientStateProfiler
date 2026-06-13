@@ -12,7 +12,6 @@ public interface UserService {
 
     Flux<UserDto> getAll();
     Mono<UserDto> getUserById(Long id);
-    Mono<UserDto> signUp(UserRequestBody userRequestBody) throws UserAlreadyExistException;
-
+    Mono<Object> signUp(UserRequestBody userRequestBody) throws UserAlreadyExistException;
     Mono<UserDto> getUserAuthorities();
 }

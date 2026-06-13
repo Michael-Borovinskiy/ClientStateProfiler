@@ -29,6 +29,7 @@ security:
     public-get:
       - /login
       - /signup
+      - /user_exist
       - /logout
       - /static/public/css/*
       - /GatewayApp/src/main/resources/static/public/css/*
