@@ -29,9 +29,5 @@ public class AuthController {
         return userService.getUserById(id);
     }
 
-    @PostMapping(value = "/users", consumes = MediaType.APPLICATION_FORM_URLENCODED_VALUE)
-    public Mono<UserDto> signUp(UserRequestBody userRequestBody) throws UserAlreadyExistException {
-        return userService.signUp(userRequestBody);
-    }
 
 }
