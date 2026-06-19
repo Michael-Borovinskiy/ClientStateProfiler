@@ -22,18 +22,26 @@ System_Boundary(clientstateprofiler, "ClientStateProfiler") {
     Container(expertise, "ExpertiseMonitoring", "Java 17, Spring Boot 3.1.6, Spring MVC, JPA/Hibernate, Thymeleaf", "Expertise monitoring service. CRUD for financial monitoring records", "port 8084")
     Container(migration, "MigrationService", "Java 17, Spring Boot 3.1.6, Flyway", "Database schema initialization and seed data", "ephemeral")
     ContainerDb(db, "PostgreSQL", "PostgreSQL 16", "Shared relational database. Stores users and expertise records", "port 15432 (host) / 5432 (container)")
+    Container(ollama, "Ollama", "Ollama 0.30.10", "Local LLM inference server. Hosts llama3.2 model for natural language to SQL conversion", "port 11434")
+    Container(dbagent, "DbAgent", "Python 3.13, psycopg2, requests", "AI-powered database agent. Converts natural language queries to SQL, executes them, and summarizes results", "interactive CLI")
 }
 
 Person(browser, "User (Browser)", "System client")
+Person(operator, "Operator (CLI)", "DB Agent user")
 
 Rel(browser, gateway, "HTTP (form login, REST)", "HTTPS")
 Rel(gateway, expertise, "HTTP (proxy /finmonitoring/v1/**)", "localhost:8084")
 Rel(gateway, db, "R2DBC", "users table")
 Rel(expertise, db, "JDBC (JPA/Hibernate)", "expertises table")
 Rel(migration, db, "JDBC (Flyway)", "init schema & seed data")
+Rel(dbagent, db, "JDBC (psycopg2)", "any query")
+Rel(dbagent, ollama, "HTTP (REST API)", "/api/generate")
+Rel(operator, dbagent, "stdin/stdout", "natural language queries")
 
 Rel_U(gateway, migration, "depends on (docker-compose)", "")
 Rel_U(expertise, migration, "depends on (docker-compose)", "")
+Rel_U(dbagent, ollama, "depends on (docker-compose)", "")
+Rel_U(dbagent, migration, "depends on (docker-compose)", "")
 
 @enduml
 ```
@@ -135,6 +143,44 @@ Rel_U(expertise, migration, "depends on (docker-compose)", "")
 
 ---
 
+### 4. DbAgent (AI-Powered Database Agent)
+
+| Characteristic | Value |
+|---|---|
+| Type | **Interactive CLI** |
+| Technologies | Python 3.13, psycopg2, requests (Ollama REST client) |
+| Dependency | Starts after PostgreSQL is healthy + Ollama is healthy |
+
+**Purpose:** Natural language interface to the database. Users describe what data they need in plain text (Russian/English), and DbAgent:
+1. Generates a SQL query using a local LLM (Ollama with `llama3.2`)
+2. Executes the SQL against PostgreSQL
+3. Summarizes the results back in natural language
+
+**Architecture — two external dependencies:**
+- **Ollama** (port `11434`) — local LLM inference server running `llama3.2` model
+- **PostgreSQL** (port `15432`) — the shared database
+
+**Key source files:**
+| File | Purpose |
+|---|---|
+| `main.py` | Entry point, interactive CLI loop. Orchestrates the 3-step pipeline (generate SQL → execute → summarize) |
+| `llm_client.py` | Ollama API client: `query_ollama()` for text generation, `extract_sql_from_response()` for parsing SQL from markdown, `wait_for_ollama()`, `pull_model()` |
+| `db_connector.py` | PostgreSQL connector via `psycopg2`. `execute_sql_query()` runs any SQL and returns `(rows, column_names)` |
+| `prompt_templates.py` | LLM prompt templates and DB schema definition (`DB_SCHEMA`, `SQL_GENERATION_PROMPT`, `SUMMARY_PROMPT`) |
+
+**Workflow (`run_agent` loop):**
+1. User enters a natural language query (e.g. *"покажи всех пользователей"*, *"find all expertises for client X"*)
+2. **SQL Generation** — `SQL_GENERATION_PROMPT` + `DB_SCHEMA` are sent to Ollama, SQL is extracted from the response
+3. **SQL Execution** — the extracted SQL is executed via `psycopg2` against PostgreSQL
+4. **Result Summarization** — the first 5 result rows + total row count are sent back to Ollama with `SUMMARY_PROMPT` for a human-readable answer (with password masking enforced)
+5. Output is displayed to the user
+
+**Security:**
+- Password column (`password` in `USERS` table) is never displayed — the summary prompt explicitly instructs the LLM to mask it as `******`
+- The SQL prompt is restricted by the provided schema; no DDL/DCL operations are allowed by default
+
+---
+
 ## Database Schema
 
 ### USERS table (GatewayApp → R2DBC)
@@ -232,16 +278,15 @@ spring:
 
 ### docker-compose Services
 
-| Service | Build Context | Ports | Dependencies |
-|---|---|---|---|
-| `db_postgres_client_profiler` | — | `15432:5432` | — |
-| `migrate` | `../MigrationService/` | — | db (healthy) |
-| `expertise_monitoring` | `../ExpertiseMonitoring/` | `8084:8084` | db (healthy) |
-| `gateway_app` | `../GatewayApp/` | `8085:8085` | db (healthy), expertise |
+| Service | Build Context | Image | Ports | Dependencies |
+|---|---|---|---|---|
+| `db_postgres_client_profiler` | — | `postgres:latest` | `15432:5432` | — |
+| `migrate` | `../MigrationService/` | build | — | db (healthy) |
+| `expertise_monitoring` | `../ExpertiseMonitoring/` | build | `8084:8084` | db (healthy) |
+| `gateway_app` | `../GatewayApp/` | build | `8085:8085` | db (healthy), expertise |
+| `ollama` | — | `ollama/ollama:0.30.10` | `11434:11434` | db (healthy) |
+| `db_agent` | `../DbAgent/` | build | — (interactive) | db (healthy), ollama (healthy) |
 
-### Environment Variables
-- `.env` — for DB and Flyway: `POSTGRES_USER=mike1`, `POSTGRES_PASSWORD=nnm`
-- `.env_sc` — for Jasypt: `jasypt.encryptor.password=commonpoint`
 
 ### Multi-stage Dockerfile
 - All services use multi-stage build: **build** (maven:3-eclipse-temurin-17) → **runtime** (openjdk:17)
@@ -295,7 +340,7 @@ spring:
 
 | Technology | Version | Usage |
 |---|---|---|
-| Java | 17 | Development language |
+| Java | 17 | Development language (GatewayApp, ExpertiseMonitoring, MigrationService) |
 | Spring Boot | 3.1.6 | Framework |
 | Spring Cloud Gateway | 2022.0.3 | API Gateway |
 | Spring WebFlux | 3.1.6 | Reactive stack (GatewayApp) |
@@ -308,9 +353,13 @@ spring:
 | PostgreSQL | 16 | Relational database |
 | Lombok | 1.18.x | Code generation |
 | Jasypt Spring Boot Starter | 2.1.2 | Configuration encryption |
+| **Python** | **3.13** | **Development language (DbAgent)** |
+| **psycopg2-binary** | **≥2.9** | **PostgreSQL connector (DbAgent)** |
+| **Ollama** | **0.30.10** | **Local LLM inference server (DbAgent dependency)** |
+| **llama3.2** | — | **LLM model for natural language → SQL (DbAgent)** |
 | Docker / Docker Compose | — | Containerization |
 | BCrypt | — | Password hashing |
-| Maven | 3.x | Project build |
+| Maven | 3.x | Project build (Java services) |
 
 ---
 
@@ -321,3 +370,5 @@ spring:
 3. **Reactive stack + Servlet stack** — hybrid approach: GatewayApp on WebFlux, ExpertiseMonitoring on Spring MVC
 4. **RBAC (Role-Based Access Control)** — role-based access differentiation
 5. **Separation of concerns** — clear division: Gateway (authentication + routing), Expertise (business logic), Migration (initialization)
+6. **AI-powered Database Agent** — DbAgent provides a natural language interface to the database using a local LLM (Ollama) for generating SQL queries and summarizing results, enforcing password masking at the prompt level
+7. **Polyglot architecture** — Java microservices coexist with a Python-based AI agent, communicating via shared database and external API (Ollama)
