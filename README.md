@@ -8,32 +8,31 @@ A web application for financial monitoring. Implements user registration/authent
 
 ## Architecture
 
-ClientStateProfiler follows a **microservice architecture** with an API Gateway and a shared database.
+ClientStateProfiler follows a **microservice architecture** with an API Gateway, a shared database, and an AI-powered database agent.
 
 ```
-┌──────────────┐     ┌──────────────┐     ┌──────────────────┐
-│  Browser     │────▶│  GatewayApp  │────▶│ExpertiseMonitoring│
-│  (Thymeleaf) │     │  :8085       │     │  :8084           │
-└──────────────┘     │ WebFlux      │     │ Spring MVC       │
-                     │ R2DBC        │     │ JPA/Hibernate    │
-                     └──────┬───────┘     └────────┬─────────┘
-                            │                       │
-                            ▼                       ▼
-                     ┌───────────────────────────────────┐
-                     │       PostgreSQL :15432           │
-                     │  ┌─────────┐  ┌───────────────┐  │
-                     │  │ USERS   │  │  EXPERTISES   │  │
-                     │  └─────────┘  └───────────────┘  │
-                     └───────────────────────────────────┘
-                               ▲
-                               │
-                     ┌──────────────────┐
-                     │ MigrationService │
-                     │  (Flyway)        │
+┌──────────────┐     ┌──────────────┐     ┌──────────────────┐      ┌────────────────────────┐
+│  Browser     │────▶│  GatewayApp  │────▶│ExpertiseMonitoring│      │    DbAgent (CLI)       │
+│  (Thymeleaf) │     │  :8085       │     │  :8084           │      │    Python 3.13         │
+└──────────────┘     │ WebFlux      │     │ Spring MVC       │      │    psycopg2            │
+                     │ R2DBC        │     │ JPA/Hibernate    │      └────┬───────────┬────────┘
+                     └──────┬───────┘     └────────┬─────────┘           │           │
+                            │                       │                    │           │
+                            ▼                       ▼                    ▼           │
+                     ┌───────────────────────────────────┐          ┌───────────┐   │
+                     │       PostgreSQL :15432          │          │  Ollama   │   │
+                     │  ┌─────────┐  ┌───────────────┐  │          │ :11434    │   │
+                     │  │ USERS   │  │  EXPERTISES   │  │          │ llama3.2  │   │
+                     │  └─────────┘  └───────────────┘  │          └───────────┘   │
+                     └───────────────────────────────────┘                         │
+                               ▲                                                    │
+                               │                                                    │
+                     ┌──────────────────┐                                           │
+                     │ MigrationService │                                           │
+                     │  (Flyway)        │───────────────────────────────────────────┘
                      └──────────────────┘
 ```
 
-> **Detailed PlantUML diagram and full architecture description** — see [Architecture.md](Architecture.md).
 
 ---
 
@@ -71,6 +70,10 @@ ClientStateProfiler follows a **microservice architecture** with an API Gateway 
 | Lombok | 1.18.x | Boilerplate code generation |
 | Jasypt Spring Boot Starter | 2.1.2 | Sensitive data encryption |
 | R2DBC PostgreSQL | 1.0.2 | Reactive PostgreSQL driver |
+| **Python** | **3.13** | **Development language (DbAgent)** |
+| **psycopg2-binary** | **≥2.9** | **PostgreSQL connector (DbAgent)** |
+| **Ollama** | **0.30.10** | **Local LLM inference server** |
+| **llama3.2** | — | **LLM model for natural language → SQL** |
 | Docker / Docker Compose | — | Containerization |
 | Maven | 3.x | Project build |
 
@@ -113,6 +116,34 @@ ClientStateProfiler follows a **microservice architecture** with an API Gateway 
 | Technologies | Spring Boot, Flyway, PostgreSQL JDBC |
 | Type | **Ephemeral** (terminates after migration) |
 | Purpose | Database schema initialization and seed data |
+
+---
+
+### 4. DbAgent (`DbAgent/`)
+
+| Characteristic | Value |
+|---|---|
+| Technologies | Python 3.13, psycopg2, requests (Ollama REST API) |
+| Type | **Interactive CLI** (Docker with `stdin_open` / `tty`) |
+| Purpose | AI-powered natural language interface to the database |
+
+**Features:**
+- Accepts natural language queries in Russian or English (e.g. *"покажи всех пользователей"*, *"find all expertises for client X"*)
+- Uses **Ollama** (local LLM server) with the `llama3.2` model to generate SQL
+- Executes SQL against the shared PostgreSQL database
+- Summarizes results in human-readable form with automatic password masking
+
+**Workflow:**
+1. User enters a query → 2. Ollama generates SQL → 3. SQL executes against PostgreSQL → 4. Ollama summarizes results
+
+**Key files:**
+| File | Purpose |
+|---|---|
+| `src/main.py` | Interactive CLI loop, 3-step orchestration |
+| `src/llm_client.py` | Ollama REST client (generate, extract SQL, pull model) |
+| `src/db_connector.py` | PostgreSQL connection via psycopg2 |
+| `src/prompt_templates.py` | LLM prompts and DB schema definition |
+| `Dockerfile` | Python 3.13-slim image |
 
 ---
 
@@ -226,7 +257,13 @@ After startup:
 1. **PostgreSQL** will be available at `localhost:15432`
 2. **GatewayApp** at `http://localhost:8085`
 3. **ExpertiseMonitoring** at `http://localhost:8084` (via Gateway)
-4. Flyway migrations run automatically when `MigrationService` starts
+4. **Ollama** (LLM server) at `http://localhost:11434`
+5. **DbAgent** — interactive CLI agent. Attach to it with:
+   ```bash
+   docker attach db_agent
+   ```
+   (or use `docker exec -it db_agent python main.py`)
+6. Flyway migrations run automatically when `MigrationService` starts
 
 ```bash
 # Stop all containers
@@ -288,18 +325,6 @@ java -jar -Djasypt.encryptor.password=commonpoint target/ExpertiseMonitoring-1.0
 
 ---
 
-## Environment Variables
-
-### `.env_sc` (for Jasypt)
-
-```bash
-jasypt.encryptor.password=commonpoint
-```
-
-Used by all microservices to decrypt encrypted values
-
----
-
 ## Development
 
 ### Project Structure
@@ -308,7 +333,7 @@ Used by all microservices to decrypt encrypted values
 ClientStateProfiler/
 ├── docker/                        # Docker infrastructure
 │   ├── docker-compose.yml         # Container orchestration
-│   ├── .env                       # DB parameters
+│   ├── .env                       # DB + Ollama parameters
 │   ├── .env_sc                    # Jasypt password
 │   └── init.sql                   # DB schema initialization
 ├── GatewayApp/                    # API Gateway + User Service
@@ -320,13 +345,22 @@ ClientStateProfiler/
 ├── MigrationService/              # DB migration service
 │   ├── src/main/java/.../         # Java code
 │   └── src/main/resources/       # Configurations, SQL migrations
+├── DbAgent/                       # AI-powered DB agent (Python)
+│   ├── Dockerfile                 # Python 3.13-slim image
+│   ├── requirements.txt           # psycopg2, requests, python-dotenv
+│   └── src/                       # Source code
+│       ├── main.py                # Interactive CLI entry point
+│       ├── llm_client.py          # Ollama REST API client
+│       ├── db_connector.py        # PostgreSQL connector (psycopg2)
+│       └── prompt_templates.py    # LLM prompts + DB schema
 ├── logs/                          # Application logs
+│   └── archived/                  # Archived log files
 ├── Architecture.md                # Architecture documentation (PlantUML)
 ├── README.md                      # This file
 └── .gitignore
 ```
 
-### How to Add a New Microservice
+### How to Add a New Microservice (Java)
 
 1. Create a new module following the pattern of `ExpertiseMonitoring/`
 2. Add the service to `docker/docker-compose.yml`
@@ -334,8 +368,15 @@ ClientStateProfiler/
 4. Add access permissions to `security.paths` in GatewayApp
 5. If needed, create a Flyway migration in `MigrationService/src/main/resources/db.migration/`
 
+### How to Add a New Python Agent
+
+1. Create a new module following the pattern of `DbAgent/`
+2. Add the service to `docker/docker-compose.yml`
+3. Configure environment variables in `docker/.env`
+4. The agent connects to the database via JDBC (psycopg2) or the Ollama API as needed
+
 ### Logging
 
-- All services use Logback with format: `%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level [%thread] %logger - %msg%n`
+- Java services use Logback with format: `%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level [%thread] %logger - %msg%n`
 - Log level: `INFO`
 - Archived logs: `logs/archived/`
