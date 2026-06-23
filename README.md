@@ -11,26 +11,42 @@ A web application for financial monitoring. Implements user registration/authent
 ClientStateProfiler follows a **microservice architecture** with an API Gateway, a shared database, and an AI-powered database agent.
 
 ```
-┌──────────────┐     ┌──────────────┐     ┌───────────────────┐      ┌────────────────────────┐
-│  Browser     │────▶│  GatewayApp  │────▶│ExpertiseMonitoring│      │    DbAgent (CLI)       │
-│  (Thymeleaf) │     │  :8085       │     │  :8084            │      │    Python 3.13         │
-└──────────────┘     │ WebFlux      │     │ Spring MVC        │      │    psycopg2            │
-                     │ R2DBC        │     │ JPA/Hibernate     │      └────┬───────────┬───────┘
-                     └──────┬───────┘     └────────┬──────────┘           │           │
-                            │                       │                     │           │
-                            ▼                       ▼                     ▼           │
-                     ┌───────────────────────────────────┐         ┌───────────┐      │
-                     │       PostgreSQL :15432           │         │  Ollama   │      │
-                     │  ┌─────────┐  ┌───────────────┐   │         │ :11434    │      │
-                     │  │ USERS   │  │  EXPERTISES   │   │         │ llama3.2  │      │
-                     │  └─────────┘  └───────────────┘   │         └───────────┘      │
-                     └───────────────────────────────────┘                            │
-                               ▲                                                      │
-                               │                                                      │
-                     ┌──────────────────┐                                             │
-                     │ MigrationService │                                             │
-                     │  (Flyway)        │─────────────────────────────────────────────┘
-                     └──────────────────┘
+┌──────────────┐     ┌──────────────┐     ┌───────────────────┐
+│  Browser     │────▶│  GatewayApp  │────▶│ExpertiseMonitoring│
+│  (Thymeleaf) │     │  :8085       │     │  :8084            │
+└──────────────┘     │ WebFlux      │     │ Spring MVC        │
+                     │ R2DBC        │     │ JPA/Hibernate     │
+                     └──────┬───────┘     └────────┬──────────┘
+                            │                       │
+          ┌─────────────────┼───────────────────────┼──────────────────┐
+          │                 ▼                       ▼                  │
+          │          ┌───────────────────────────────────┐             │
+          │          │       PostgreSQL :15432           │             │
+          │          │  ┌─────────┐  ┌───────────────┐   │             │
+          │          │  │ USERS   │  │  EXPERTISES   │   │             │
+          │          │  └─────────┘  └───────────────┘   │             │
+          │          └───────────────────────────────────┘             │
+          │                    ▲                                       │ 
+          │                    │                                       │
+          │          ┌──────────────────┐                              │
+          │          │ MigrationService │                              │
+          │          │  (Flyway)        │──────────────────────────────┘
+          │          └──────────────────┘
+          │
+          │  ┌────────────────────────────────────────────────────────┐
+          │  │                    DbAgent :8080                       │
+          ├──│──── Web UI (chat)    Python 3.13, Django 5, gunicorn   │
+          │  │              ┌──────────────────┬──────────────┐       │
+          │  │              │  Ollama          │  PostgreSQL  │       │
+          │  │              │ :11434           │  (via        │       │
+          │  │              │ qwen2.5-coder:7B │   psycopg2)  │       │
+          │  │              └──────────────────┴──────────────┘       │
+          │  └────────────────────────────────────────────────────────┘
+          │
+          │  ┌──────────────────────────────────────────┐
+          └──│ Operator (CLI) — docker exec db_agent    │
+             │ stdin/stdout — natural language queries  │
+             └──────────────────────────────────────────┘
 ```
 
 
@@ -71,9 +87,12 @@ ClientStateProfiler follows a **microservice architecture** with an API Gateway,
 | Jasypt Spring Boot Starter | 2.1.2 | Sensitive data encryption |
 | R2DBC PostgreSQL | 1.0.2 | Reactive PostgreSQL driver |
 | **Python** | **3.13** | **Development language (DbAgent)** |
+| **Django** | **≥5.0** | **Web framework for DbAgent UI** |
+| **gunicorn** | **≥21.2** | **WSGI server for DbAgent web interface** |
+| **whitenoise** | **≥6.6** | **Static file serving for Django (DbAgent)** |
 | **psycopg2-binary** | **≥2.9** | **PostgreSQL connector (DbAgent)** |
 | **Ollama** | **0.30.10** | **Local LLM inference server** |
-| **llama3.2** | — | **LLM model for natural language → SQL** |
+| **qwen2.5-coder:7B** | — | **LLM model for natural language → SQL** |
 | Docker / Docker Compose | — | Containerization |
 | Maven | 3.x | Project build |
 
@@ -123,15 +142,25 @@ ClientStateProfiler follows a **microservice architecture** with an API Gateway,
 
 | Characteristic | Value |
 |---|---|
-| Technologies | Python 3.13, psycopg2, requests (Ollama REST API) |
-| Type | **Interactive CLI** (Docker with `stdin_open` / `tty`) |
+| Web UI Port | `8080` (gunicorn) — via `http://localhost:8080` |
+| Interfaces | **Django Web UI** (browser chat) + **Interactive CLI** |
+| Technologies | Python 3.13, Django 5, gunicorn, whitenoise, psycopg2, requests (Ollama REST API) |
 | Purpose | AI-powered natural language interface to the database |
 
 **Features:**
+- **Dual interface**: Web UI (primary) and interactive CLI (alternative)
 - Accepts natural language queries in Russian or English (e.g. *"покажи всех пользователей"*, *"find all expertises for client X"*)
-- Uses **Ollama** (local LLM server) with the `llama3.2` model to generate SQL
+- Uses **Ollama** (local LLM server) with the `qwen2.5-coder:7B` model to generate SQL
 - Executes SQL against the shared PostgreSQL database
 - Summarizes results in human-readable form with automatic password masking
+
+**Web UI features:**
+- Chat-like interface with real-time status indicators (Ollama/PostgreSQL)
+- Step-by-step visualization (1/3 Generate SQL → 2/3 Execute → 3/3 Summarize)
+- Results displayed in a table (first 5 rows by default, with total row count)
+- Keyboard shortcuts: `Ctrl+R` (refresh status), `Ctrl+L` (clear conversation)
+- "Pull model" button to download Ollama model from the UI
+- REST API endpoints: `GET /api/status`, `POST /api/query`, `POST /api/pull-model`
 
 **Workflow:**
 1. User enters a query → 2. Ollama generates SQL → 3. SQL executes against PostgreSQL → 4. Ollama summarizes results
@@ -139,11 +168,24 @@ ClientStateProfiler follows a **microservice architecture** with an API Gateway,
 **Key files:**
 | File | Purpose |
 |---|---|
+| **Core pipeline** | |
 | `src/main.py` | Interactive CLI loop, 3-step orchestration |
 | `src/llm_client.py` | Ollama REST client (generate, extract SQL, pull model) |
 | `src/db_connector.py` | PostgreSQL connection via psycopg2 |
 | `src/prompt_templates.py` | LLM prompts and DB schema definition |
-| `Dockerfile` | Python 3.13-slim image |
+| **Web UI (Django)** | |
+| `manage.py` | Django management command-line utility |
+| `web/settings.py` | Django settings (Whitenoise, timezone, etc.) |
+| `web/urls.py` | URL routing: `/`, `/api/query`, `/api/status`, `/api/pull-model` |
+| `web/views.py` | Django views: index page, query API, status API, pull model API |
+| `web/agent_service.py` | Wraps pipeline (`run_pipeline`, `check_connections`, `pull_ollama_model`) |
+| `web/wsgi.py` | WSGI entry point for gunicorn |
+| `web/templates/web/index.html` | Chat UI template (status bar, messages, results table) |
+| `web/static/web/css/style.css` | Chat interface styles |
+| `web/static/web/js/main.js` | Frontend JS: query submission, status polling, keyboard shortcuts |
+| **Infrastructure** | |
+| `Dockerfile` | Python 3.13-slim, gunicorn, static file collection |
+| `requirements.txt` | Django, gunicorn, whitenoise, psycopg2, requests |
 
 ---
 
@@ -258,11 +300,9 @@ After startup:
 2. **GatewayApp** at `http://localhost:8085`
 3. **ExpertiseMonitoring** at `http://localhost:8084` (via Gateway)
 4. **Ollama** (LLM server) at `http://localhost:11434`
-5. **DbAgent** — interactive CLI agent. Attach to it with:
-   ```bash
-   docker attach db_agent
-   ```
-   (or use `docker exec -it db_agent python main.py`)
+5. **DbAgent** — two interfaces:
+   - **Web UI**: open `http://localhost:8080` in your browser
+   - **CLI**: attach with `docker exec -it db_agent python /app/src/main.py`
 6. Flyway migrations run automatically when `MigrationService` starts
 
 ```bash
@@ -346,13 +386,30 @@ ClientStateProfiler/
 │   ├── src/main/java/.../         # Java code
 │   └── src/main/resources/       # Configurations, SQL migrations
 ├── DbAgent/                       # AI-powered DB agent (Python)
-│   ├── Dockerfile                 # Python 3.13-slim image
-│   ├── requirements.txt           # psycopg2, requests, python-dotenv
-│   └── src/                       # Source code
-│       ├── main.py                # Interactive CLI entry point
-│       ├── llm_client.py          # Ollama REST API client
-│       ├── db_connector.py        # PostgreSQL connector (psycopg2)
-│       └── prompt_templates.py    # LLM prompts + DB schema
+│   ├── Dockerfile                 # Python 3.13-slim, gunicorn, collectstatic
+│   ├── manage.py                  # Django management command-line utility
+│   ├── requirements.txt           # Django, gunicorn, whitenoise, psycopg2, requests
+│   ├── src/                       # Core pipeline source code
+│   │   ├── main.py                # Interactive CLI entry point
+│   │   ├── llm_client.py          # Ollama REST API client
+│   │   ├── db_connector.py        # PostgreSQL connector (psycopg2)
+│   │   └── prompt_templates.py    # LLM prompts + DB schema
+│   ├── web/                       # Django web application
+│   │   ├── __init__.py
+│   │   ├── settings.py            # Django settings (Whitenoise, timezone)
+│   │   ├── urls.py                # URL routing (/, /api/query, /api/status, /api/pull-model)
+│   │   ├── views.py               # Django views (index, api_query, api_status, api_pull_model)
+│   │   ├── wsgi.py                # WSGI entry point for gunicorn
+│   │   ├── agent_service.py       # Wraps pipeline for web (run_pipeline, check_connections)
+│   │   ├── templates/web/
+│   │   │   └── index.html         # Chat UI template
+│   │   └── static/web/
+│   │       ├── css/style.css      # Chat interface styles
+│   │       └── js/main.js         # Frontend JavaScript
+│   └── staticfiles/               # Collected static files (auto-generated)
+│       └── web/
+│           ├── css/style.css
+│           └── js/main.js
 ├── logs/                          # Application logs
 │   └── archived/                  # Archived log files
 ├── Architecture.md                # Architecture documentation (PlantUML)
