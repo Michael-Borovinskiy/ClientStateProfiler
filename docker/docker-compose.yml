@@ -88,8 +88,8 @@ services:
     container_name: db_agent
     env_file:
       - .env
-    stdin_open: true
-    tty: true
+    ports:
+      - "8086:8086"
     depends_on:
       db_postgres_client_profiler:
         condition: service_healthy
