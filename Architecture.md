@@ -23,11 +23,11 @@ System_Boundary(clientstateprofiler, "ClientStateProfiler") {
     Container(migration, "MigrationService", "Java 17, Spring Boot 3.1.6, Flyway", "Database schema initialization and seed data", "ephemeral")
     ContainerDb(db, "PostgreSQL", "PostgreSQL 16", "Shared relational database. Stores users and expertise records", "port 15432 (host) / 5432 (container)")
     Container(ollama, "Ollama", "Ollama 0.30.10", "Local LLM inference server. Hosts llama3.2 model for natural language to SQL conversion", "port 11434")
-    Container(dbagent, "DbAgent", "Python 3.13, psycopg2, requests", "AI-powered database agent. Converts natural language queries to SQL, executes them, and summarizes results", "interactive CLI")
+    Container(dbagent, "DbAgent", "Python 3.13, Django 5, gunicorn, psycopg2, requests", "AI-powered database agent. Web UI + CLI. Converts natural language queries to SQL, executes them, and summarizes results", "port 8080 (web), 8086 (compose)")
 }
 
-Person(browser, "User (Browser)", "System client")
-Person(operator, "Operator (CLI)", "DB Agent user")
+Person(browser_agent, "User (Browser/DbAgent)", "Web UI user")
+Person(operator, "Operator (CLI)", "DB Agent CLI user")
 
 Rel(browser, gateway, "HTTP (form login, REST)", "HTTPS")
 Rel(gateway, expertise, "HTTP (proxy /finmonitoring/v1/**)", "localhost:8084")
@@ -36,7 +36,8 @@ Rel(expertise, db, "JDBC (JPA/Hibernate)", "expertises table")
 Rel(migration, db, "JDBC (Flyway)", "init schema & seed data")
 Rel(dbagent, db, "JDBC (psycopg2)", "any query")
 Rel(dbagent, ollama, "HTTP (REST API)", "/api/generate")
-Rel(operator, dbagent, "stdin/stdout", "natural language queries")
+Rel(browser_agent, dbagent, "HTTP (chat UI)", "localhost:8080")
+Rel(operator, dbagent, "stdin/stdout", "natural language queries (CLI mode)")
 
 Rel_U(gateway, migration, "depends on (docker-compose)", "")
 Rel_U(expertise, migration, "depends on (docker-compose)", "")
@@ -147,11 +148,12 @@ Rel_U(dbagent, migration, "depends on (docker-compose)", "")
 
 | Characteristic | Value |
 |---|---|
-| Type | **Interactive CLI** |
-| Technologies | Python 3.13, psycopg2, requests (Ollama REST client) |
+| Web UI Port | `8080` (gunicorn), `8086` (docker-compose mapping with host networking) |
+| Interfaces | **Django Web UI** (browser chat) + **Interactive CLI** |
+| Technologies | Python 3.13, Django 5, gunicorn, whitenoise, psycopg2, requests (Ollama REST client) |
 | Dependency | Starts after PostgreSQL is healthy + Ollama is healthy |
 
-**Purpose:** Natural language interface to the database. Users describe what data they need in plain text (Russian/English), and DbAgent:
+**Purpose:** Natural language interface to the database — available both via browser and command line. Users describe what data they need in plain text (Russian/English), and DbAgent:
 1. Generates a SQL query using a local LLM (Ollama with `llama3.2`)
 2. Executes the SQL against PostgreSQL
 3. Summarizes the results back in natural language
@@ -160,20 +162,41 @@ Rel_U(dbagent, migration, "depends on (docker-compose)", "")
 - **Ollama** (port `11434`) — local LLM inference server running `llama3.2` model
 - **PostgreSQL** (port `15432`) — the shared database
 
+**Dual Interface:**
+- **Web UI** (primary): Django-based chat interface at `http://localhost:8080` served by gunicorn
+  - Real-time status indicators for Ollama and PostgreSQL connections
+  - Chat-based interaction with step visualization (1/3 Generate SQL → 2/3 Execute → 3/3 Summarize)
+  - Results displayed in a table with configurable row limits (max 5 shown by default)
+  - Keyboard shortcuts: Ctrl+R (check status), Ctrl+L (clear conversation)
+  - Ability to pull Ollama model from the UI
+  - API endpoints: `GET /api/status`, `POST /api/query`, `POST /api/pull-model`
+- **CLI** (alternative): Interactive shell via `src/main.py` — run directly in the container with `docker exec -it db_agent python main.py`
+
 **Key source files:**
 | File | Purpose |
 |---|---|
-| `main.py` | Entry point, interactive CLI loop. Orchestrates the 3-step pipeline (generate SQL → execute → summarize) |
-| `llm_client.py` | Ollama API client: `query_ollama()` for text generation, `extract_sql_from_response()` for parsing SQL from markdown, `wait_for_ollama()`, `pull_model()` |
-| `db_connector.py` | PostgreSQL connector via `psycopg2`. `execute_sql_query()` runs any SQL and returns `(rows, column_names)` |
-| `prompt_templates.py` | LLM prompt templates and DB schema definition (`DB_SCHEMA`, `SQL_GENERATION_PROMPT`, `SUMMARY_PROMPT`) |
+| **Core pipeline** | |
+| `src/main.py` | Entry point, interactive CLI loop. Orchestrates the 3-step pipeline (generate SQL → execute → summarize) |
+| `src/llm_client.py` | Ollama API client: `query_ollama()` for text generation, `extract_sql_from_response()` for parsing SQL from markdown, `wait_for_ollama()`, `pull_model()` |
+| `src/db_connector.py` | PostgreSQL connector via `psycopg2`. `execute_sql_query()` runs any SQL and returns `(rows, column_names)` |
+| `src/prompt_templates.py` | LLM prompt templates and DB schema definition (`DB_SCHEMA`, `SQL_GENERATION_PROMPT`, `SUMMARY_PROMPT`) |
+| **Web UI (Django)** | |
+| `manage.py` | Django management command-line utility |
+| `web/settings.py` | Django settings: Whitenoise for static files, timezone Europe/Moscow, DbAgent-specific settings (`DBAGENT_OLLAMA_TIMEOUT`, `DBAGENT_MAX_RETRIES`) |
+| `web/urls.py` | URL routing: `/` (chat UI), `/api/query`, `/api/status`, `/api/pull-model` |
+| `web/views.py` | Views: `index()` renders chat page, `api_query()` runs pipeline, `api_status()` checks connections, `api_pull_model()` pulls Ollama model |
+| `web/agent_service.py` | Wraps the core pipeline into reusable functions for the web interface (`run_pipeline`, `check_connections`, `pull_ollama_model`) |
+| `web/wsgi.py` | WSGI entry point for gunicorn |
+| `web/templates/web/index.html` | Chat UI template with status bar, message area, results table, input field |
+| `web/static/web/css/style.css` | Styles for the chat interface |
+| `web/static/web/js/main.js` | Frontend JavaScript: query submission, status polling, result rendering, keyboard shortcuts |
 
-**Workflow (`run_agent` loop):**
+**Workflow (`run_agent` pipeline — same for both interfaces):**
 1. User enters a natural language query (e.g. *"покажи всех пользователей"*, *"find all expertises for client X"*)
 2. **SQL Generation** — `SQL_GENERATION_PROMPT` + `DB_SCHEMA` are sent to Ollama, SQL is extracted from the response
 3. **SQL Execution** — the extracted SQL is executed via `psycopg2` against PostgreSQL
 4. **Result Summarization** — the first 5 result rows + total row count are sent back to Ollama with `SUMMARY_PROMPT` for a human-readable answer (with password masking enforced)
-5. Output is displayed to the user
+5. Output is displayed to the user (in chat UI or CLI)
 
 **Security:**
 - Password column (`password` in `USERS` table) is never displayed — the summary prompt explicitly instructs the LLM to mask it as `******`
@@ -285,7 +308,7 @@ spring:
 | `expertise_monitoring` | `../ExpertiseMonitoring/` | build | `8084:8084` | db (healthy) |
 | `gateway_app` | `../GatewayApp/` | build | `8085:8085` | db (healthy), expertise |
 | `ollama` | — | `ollama/ollama:0.30.10` | `11434:11434` | db (healthy) |
-| `db_agent` | `../DbAgent/` | build | — (interactive) | db (healthy), ollama (healthy) |
+| `db_agent` | `../DbAgent/` | build | `8086:8086` (host networking, app listens on `8080`) | db (healthy), ollama (healthy) |
 
 
 ### Multi-stage Dockerfile
@@ -354,6 +377,9 @@ spring:
 | Lombok | 1.18.x | Code generation |
 | Jasypt Spring Boot Starter | 2.1.2 | Configuration encryption |
 | **Python** | **3.13** | **Development language (DbAgent)** |
+| **Django** | **≥5.0** | **Web framework for DbAgent UI** |
+| **gunicorn** | **≥21.2** | **WSGI server for DbAgent web interface** |
+| **whitenoise** | **≥6.6** | **Static file serving for Django (DbAgent)** |
 | **psycopg2-binary** | **≥2.9** | **PostgreSQL connector (DbAgent)** |
 | **Ollama** | **0.30.10** | **Local LLM inference server (DbAgent dependency)** |
 | **llama3.2** | — | **LLM model for natural language → SQL (DbAgent)** |
