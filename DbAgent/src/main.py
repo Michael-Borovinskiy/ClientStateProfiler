@@ -21,7 +21,7 @@ def format_rows(rows: list[tuple], column_names: list[str]) -> str:
 def run_agent():
     print("=" * 60)
     print("  DB Agent — AI-помощник для работы с PostgreSQL")
-    print("  Модель: Ollama (llama3.2)")
+    print("  Модель: Ollama (qwen2.5-coder:7B)")
     print("  Для выхода введите: exit, quit или Ctrl+C")
     print("=" * 60)
     print()

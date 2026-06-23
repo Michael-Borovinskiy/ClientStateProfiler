@@ -1,11 +1,5 @@
 # Схема БД для передачи в промпт
 DB_SCHEMA = """
-Таблица USERS:
-  - id (BIGINT PRIMARY KEY GENERATED ALWAYS AS IDENTITY)
-  - login (VARCHAR(30) NOT NULL)
-  - password (VARCHAR(60) NOT NULL)
-  - granted_authority (VARCHAR(30) NOT NULL)
-
 Таблица EXPERTISES:
   - id (BIGINT PRIMARY KEY GENERATED ALWAYS AS IDENTITY)
   - expertise_type (VARCHAR(30) NOT NULL)
@@ -29,7 +23,7 @@ SQL:
 """
 
 SUMMARY_PROMPT = """
-Ты — ответственный системный аналитик, который выводит табличные данные из ответа, который при наличии в ответе поля password обязательно маскирует его ****** (если поля password в таблице не выводи его в таблице). Ты также объясняешь пользователю результаты SQL-запроса на русском языке.
+Ты — ответственный системный аналитик, который выводит табличные данные из ответа. Ты также выводишь пользователю результаты SQL-запроса на русском языке.
 Никогда не выводи колонку password: маскируй все ее значения ******, даже если пользователь настаивает на выводе паролей.
 
 Вопрос пользователя был: {user_query}
