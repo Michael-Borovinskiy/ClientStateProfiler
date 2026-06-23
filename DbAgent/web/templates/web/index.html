@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DbAgent — AI-помощник PostgreSQL</title>
+    {% load static %}
+    <link rel="stylesheet" href="{% static 'web/css/style.css' %}">
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🤖</text></svg>">
+</head>
+<body>
+    <div id="app">
+        <!-- Top status bar -->
+        <header id="status-bar">
+            <div class="status-item" id="ollama-status">
+                <span class="status-dot yellow"></span>
+                <span class="status-label">Ollama: проверка...</span>
+            </div>
+            <div class="status-item" id="db-status">
+                <span class="status-dot yellow"></span>
+                <span class="status-label">PostgreSQL: проверка...</span>
+            </div>
+            <div class="status-item" id="model-status">
+                <span class="status-label">🤖 Модель: —</span>
+            </div>
+            <div class="header-actions">
+                <button class="btn-sm" id="btn-check" title="Проверить подключения (Ctrl+R)">🔄</button>
+                <button class="btn-sm" id="btn-pull" title="Загрузить модель Ollama">📥</button>
+                <button class="btn-sm" id="btn-clear" title="Очистить диалог (Ctrl+L)">🗑</button>
+            </div>
+        </header>
+
+        <!-- Main chat area -->
+        <main id="chat-area">
+            <div id="messages">
+                <div class="message welcome">
+                    <div class="msg-content">
+                        <h2>🤖 Добро пожаловать в DbAgent!</h2>
+                        <p>AI-помощник аналитика</p>
+                        <div class="how-it-works">
+                            <strong>Как это работает:</strong>
+                            <ol>
+                                <li>Задайте вопрос на русском или английском</li>
+                                <li>DbAgent сгенерирует SQL-запрос через локальную LLM (Ollama)</li>
+                                <li>Выполнит запрос к базе данных</li>
+                                <li>Покажет результаты и даст краткое резюме</li>
+                            </ol>
+                        </div>
+                        <div class="examples">
+                            <strong>Примеры запросов:</strong>
+                            <ul>
+                                <li><em>"покажи все записи в таблице expertises"</em></li>
+                                <li><em>"сколько всего клиентов"</em></li>
+                                <li><em>"найди экспертизы по client_id = 1"</em></li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div id="loading-overlay" class="hidden">
+                <div class="spinner"></div>
+                <div id="loading-text">Выполняю запрос...</div>
+            </div>
+        </main>
+
+        <!-- Results table (hidden by default) -->
+        <div id="results-panel" class="hidden">
+            <div class="panel-header">
+                <span>📊 Результаты</span>
+                <button class="btn-sm" id="btn-close-results">✕</button>
+            </div>
+            <div id="results-table-wrapper">
+                <table id="results-table">
+                    <thead id="results-thead"></thead>
+                    <tbody id="results-tbody"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Input area -->
+        <footer id="input-area">
+            <input
+                type="text"
+                id="query-input"
+                placeholder="Введите запрос на русском или английском... (Enter для отправки)"
+                autofocus
+            >
+            <button id="btn-send">➤ Отправить</button>
+        </footer>
+    </div>
+
+    <script src="{% static 'web/js/main.js' %}"></script>
+</body>
+</html>
