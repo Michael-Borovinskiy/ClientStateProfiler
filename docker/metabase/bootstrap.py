@@ -44,21 +44,19 @@ logging.basicConfig(
 LOGGER = logging.getLogger("metabase_bootstrap")
 
 
-BASE_URL = os.getenv("METABASE_BASE_URL", "localhost").rstrip("/")
-POSTGRES_HOST = os.getenv("POSTGRES_HOST", "localhost")
-POSTGRES_PORT = int(os.getenv("POSTGRES_PORT", "15432"))
-POSTGRES_DB = os.getenv("POSTGRES_DB", "mike1")
-POSTGRES_USER = os.getenv("POSTGRES_USER", "mike1")
-POSTGRES_PASSWORD = os.getenv("POSTGRES_PASSWORD", "nnm")
+BASE_URL = os.getenv("METABASE_BASE_URL").rstrip("/")
+POSTGRES_HOST = os.getenv("POSTGRES_HOST")
+POSTGRES_PORT = int(os.getenv("POSTGRES_PORT"))
+POSTGRES_DB = os.getenv("POSTGRES_DB")
+POSTGRES_USER = os.getenv("POSTGRES_USER")
+POSTGRES_PASSWORD = os.getenv("POSTGRES_PASSWORD")
 
-METABASE_EMAIL = os.getenv("METABASE_EMAIL", "metabase-admin@clientstateprofiler.local")
-METABASE_PASSWORD = os.getenv("METABASE_PASSWORD", "ChangeMe_123!")
-METABASE_DB_NAME = os.getenv("METABASE_DB_NAME", "mike1")
-METABASE_DASHBOARD_NAME = os.getenv(
-    "METABASE_DASHBOARD_NAME", "Expertise Health Overview"
-)
-METABASE_SITE_NAME = os.getenv("METABASE_SITE_NAME", "ClientStateProfiler").strip()
-REFRESH_SECONDS = int(os.getenv("METABASE_REFRESH_SECONDS", "120"))
+METABASE_EMAIL = os.getenv("METABASE_EMAIL")
+METABASE_PASSWORD = os.getenv("METABASE_PASSWORD")
+METABASE_DB_NAME = os.getenv("METABASE_DB_NAME")
+METABASE_DASHBOARD_NAME = os.getenv("METABASE_DASHBOARD_NAME")
+METABASE_SITE_NAME = os.getenv("METABASE_SITE_NAME").strip()
+REFRESH_SECONDS = int(os.getenv("METABASE_REFRESH_SECONDS"))
 
 
 GAUGE_DEFINITIONS: List[Dict[str, Any]] = [
@@ -162,7 +160,7 @@ def run_initial_setup() -> str:
             "engine": "postgres",
             "details": db_details,
         },
-        "settings": {
+        "prefs": {
             "site_name": "ClientStateProfiler",
             "site_locale": "en",
             "allow_tracking": False,
@@ -180,34 +178,35 @@ def run_initial_setup() -> str:
 def login_or_setup() -> str:
     """Obtain a Metabase session, performing setup if required."""
 
-    properties = api_request("GET", "/api/session/properties").json()
-    if properties.get("setup-token"):
-        LOGGER.info("Metabase instance not configured yet. Running initial setup")
-        return run_initial_setup()
-
-    LOGGER.info("Metabase already initialized. Attempting to log in")
+    # Try login first — handles the case where a previous bootstrap attempt
+    # created the user but failed before completing (e.g. due to a bug),
+    # leaving the setup-token still present but /api/setup returning 403.
+    LOGGER.info("Attempting to log in to Metabase")
     try:
         response = api_request(
             "POST",
             "/api/session",
             json={"username": METABASE_EMAIL, "password": METABASE_PASSWORD},
         )
-    except RuntimeError as exc:
-        message = str(exc)
-        if "password" in message.lower():
-            raise RuntimeError(
-                "Failed to authenticate to Metabase using METABASE_EMAIL / "
-                "METABASE_PASSWORD. Please ensure these environment variables "
-                "match the existing admin credentials or reset the Metabase "
-                "application data volume."
-            ) from exc
-        raise
+        session_id = response.json().get("id")
+        if session_id:
+            LOGGER.info("Authenticated with existing Metabase user")
+            return session_id
+    except RuntimeError:
+        LOGGER.info("Login failed, Metabase may not be configured yet")
 
-    session_id = response.json().get("id")
-    if not session_id:
-        raise RuntimeError("Login response did not include a session id")
-    LOGGER.info("Authenticated with existing Metabase user")
-    return session_id
+    # Login didn't work — check if setup is needed
+    properties = api_request("GET", "/api/session/properties").json()
+    if properties.get("setup-token"):
+        LOGGER.info("Metabase instance not configured yet. Running initial setup")
+        return run_initial_setup()
+
+    raise RuntimeError(
+        "Failed to authenticate to Metabase using METABASE_EMAIL / "
+        "METABASE_PASSWORD. Please ensure these environment variables "
+        "match the existing admin credentials or reset the Metabase "
+        "application data volume."
+    )
 
 
 def ensure_database(session_id: str) -> int:
@@ -336,31 +335,55 @@ def ensure_dashcards(
 ) -> None:
     """Place the specified cards on the dashboard if missing."""
 
+    def clean_dashcards(dashcards):
+        cleaned = []
+        for dashcard in dashcards:
+            cleaned_dashcard = dashcard.copy()
+            cleaned_dashcard.pop("card", None)
+            cleaned_dashcard.pop("series", None)
+            # The API expects snake_case keys, but returns camelCase keys.
+            if "sizeX" in cleaned_dashcard:
+                cleaned_dashcard["size_x"] = cleaned_dashcard.pop("sizeX")
+            if "sizeY" in cleaned_dashcard:
+                cleaned_dashcard["size_y"] = cleaned_dashcard.pop("sizeY")
+            cleaned.append(cleaned_dashcard)
+        return cleaned
+
     dashboard = get_dashboard(session_id, dashboard_id)
-    existing_card_ids = {card.get("card_id") for card in dashboard.get("ordered_cards", [])}
+    existing_dashcards = dashboard.get("ordered_cards", [])
+    cleaned_existing_dashcards = clean_dashcards(existing_dashcards)
+    existing_card_ids = {dashcard.get("card_id") for dashcard in cleaned_existing_dashcards}
 
-    for card_id, position in cards.items():
-        if card_id in existing_card_ids:
-            LOGGER.info("Card %s already on dashboard", card_id)
-            continue
+    cards_to_add = []
+    for i, (card_id, position) in enumerate(cards.items()):
+        if card_id not in existing_card_ids:
+            LOGGER.info("Queuing card %s for dashboard placement", card_id)
+            cards_to_add.append(
+                {
+                    "id": -(i + 1),  # Assign a temporary negative ID
+                    "card_id": card_id,
+                    "col": position.get("col", 0),
+                    "row": position.get("row", 0),
+                    "size_x": position.get("sizeX", 12),
+                    "size_y": position.get("sizeY", 8),
+                }
+            )
 
-        payload = {
-            "cardId": card_id,
-            "parameter_mappings": [],
-            "visualization_settings": {},
-            "col": position.get("col", 0),
-            "row": position.get("row", 0),
-            "sizeX": position.get("sizeX", 12),
-            "sizeY": position.get("sizeY", 8),
-        }
+    if not cards_to_add:
+        LOGGER.info("All cards already on dashboard")
+        return
 
-        api_request(
-            "POST",
-            f"/api/dashboard/{dashboard_id}/cards",
-            session_id=session_id,
-            json=payload,
-        )
-        LOGGER.info("Placed card %s on dashboard", card_id)
+    updated_dashcards = cleaned_existing_dashcards + cards_to_add
+    payload = {"cards": updated_dashcards}
+
+    api_request(
+        "PUT",
+        f"/api/dashboard/{dashboard_id}/cards",
+        session_id=session_id,
+        json=payload,
+        expected_status=[200],
+    )
+    LOGGER.info("Placed %d new card(s) on dashboard", len(cards_to_add))
 
 
 def set_dashboard_refresh(session_id: str, dashboard_id: int) -> None:
