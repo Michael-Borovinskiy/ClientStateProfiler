@@ -22,7 +22,7 @@ System_Boundary(clientstateprofiler, "ClientStateProfiler") {
     Container(expertise, "ExpertiseMonitoring", "Java 17, Spring Boot 3.1.6, Spring MVC, JPA/Hibernate, Thymeleaf", "Expertise monitoring service. CRUD for financial monitoring records", "port 8084")
     Container(migration, "MigrationService", "Java 17, Spring Boot 3.1.6, Flyway", "Database schema initialization and seed data", "ephemeral")
     ContainerDb(db, "PostgreSQL", "PostgreSQL 16", "Shared relational database. Stores users and expertise records", "port 15432 (host) / 5432 (container)")
-    Container(ollama, "Ollama", "Ollama 0.30.10", "Local LLM inference server. Hosts llama3.2 model for natural language to SQL conversion", "port 11434")
+    Container(ollama, "Ollama", "Ollama 0.30.10", "Local LLM inference server. Hosts qwen2.5-coder:7B model for natural language to SQL conversion", "port 11434")
     Container(dbagent, "DbAgent", "Python 3.13, Django 5, gunicorn, psycopg2, requests", "AI-powered database agent. Web UI + CLI. Converts natural language queries to SQL, executes them, and summarizes results", "port 8080 (web), 8086 (compose)")
 }
 
@@ -154,12 +154,12 @@ Rel_U(dbagent, migration, "depends on (docker-compose)", "")
 | Dependency | Starts after PostgreSQL is healthy + Ollama is healthy |
 
 **Purpose:** Natural language interface to the database — available both via browser and command line. Users describe what data they need in plain text (Russian/English), and DbAgent:
-1. Generates a SQL query using a local LLM (Ollama with `llama3.2`)
+1. Generates a SQL query using a local LLM (Ollama with `qwen2.5-coder:7B`)
 2. Executes the SQL against PostgreSQL
 3. Summarizes the results back in natural language
 
 **Architecture — two external dependencies:**
-- **Ollama** (port `11434`) — local LLM inference server running `llama3.2` model
+- **Ollama** (port `11434`) — local LLM inference server running `qwen2.5-coder:7B` model
 - **PostgreSQL** (port `15432`) — the shared database
 
 **Dual Interface:**
@@ -382,7 +382,7 @@ spring:
 | **whitenoise** | **≥6.6** | **Static file serving for Django (DbAgent)** |
 | **psycopg2-binary** | **≥2.9** | **PostgreSQL connector (DbAgent)** |
 | **Ollama** | **0.30.10** | **Local LLM inference server (DbAgent dependency)** |
-| **llama3.2** | — | **LLM model for natural language → SQL (DbAgent)** |
+| **qwen2.5-coder:7B** | — | **LLM model for natural language → SQL (DbAgent)** |
 | Docker / Docker Compose | — | Containerization |
 | BCrypt | — | Password hashing |
 | Maven | 3.x | Project build (Java services) |

@@ -44,9 +44,12 @@ ClientStateProfiler follows a **microservice architecture** with an API Gateway,
           │  └────────────────────────────────────────────────────────┘
           │
           │  ┌──────────────────────────────────────────┐
-          └──│ Operator (CLI) — docker exec db_agent    │
-             │ stdin/stdout — natural language queries  │
-             └──────────────────────────────────────────┘
+47 |           │  │ Metabase (dashboards) :3000              │
+48 |           │  └──────────────────────────────────────────┘
+49 |           │
+50 |           └──│ Operator (CLI) — docker exec db_agent    │
+51 |              │ stdin/stdout — natural language queries  │
+52 |              └──────────────────────────────────────────┘
 ```
 
 
@@ -186,6 +189,22 @@ ClientStateProfiler follows a **microservice architecture** with an API Gateway,
 | **Infrastructure** | |
 | `Dockerfile` | Python 3.13-slim, gunicorn, static file collection |
 | `requirements.txt` | Django, gunicorn, whitenoise, psycopg2, requests |
+190 | 
+191 | ### 5. Metabase Dashboard (`docker/metabase/`)
+192 | 
+193 | | Characteristic | Value |
+194 | |---|---|
+195 | | Port | `3000` |
+196 | | Technologies | Metabase OSS, PostgreSQL connector |
+197 | | Purpose | Auto-generated dashboard with expertise gauges |
+198 | 
+199 | **Features:**
+200 | - Dockerized Metabase instance attached to the shared PostgreSQL database.
+201 | - Bootstrap script (`docker/metabase/bootstrap.py`) creates the admin user, DB connection, cards, and dashboard automatically.
+202 | - Dashboard "Expertise Health Overview" shows two gauge widgets:
+203 |   1. **Total Expertises** (record count)
+204 |   2. **Closed Expertises (%)** (percentage of `status = 'CLOSED'`)
+205 | - Auto-refresh interval set to **2 minutes**.
 
 ---
 
@@ -293,17 +312,31 @@ cd ClientStateProfiler
 
 # Start all services
 docker-compose -f docker/docker-compose.yml up --build
-```
 
 After startup:
 1. **PostgreSQL** will be available at `localhost:15432`
 2. **GatewayApp** at `http://localhost:8085`
 3. **ExpertiseMonitoring** at `http://localhost:8084` (via Gateway)
-4. **Ollama** (LLM server) at `http://localhost:11434`
-5. **DbAgent** — two interfaces:
+4. **Metabase Dashboard** at `http://localhost:3000` (use `METABASE_EMAIL` / `METABASE_PASSWORD` from `docker/.env`)
+5. **Ollama** (LLM server) at `http://localhost:11434`
+6. **DbAgent** — two interfaces:
    - **Web UI**: open `http://localhost:8080` in your browser
    - **CLI**: attach with `docker exec -it db_agent python /app/src/main.py`
-6. Flyway migrations run automatically when `MigrationService` starts
+7. Flyway migrations run automatically when `MigrationService` starts
+
+# Metabase dashboard bootstrap
+
+- A dedicated `metabase` service (Metabase OSS) is bundled into Docker Compose and stores its application data inside the `metabase_data` volume.
+- On startup, the `metabase_bootstrap` helper container executes `docker/metabase/bootstrap.py` which:
+  1. Waits for Metabase to report healthy.
+  2. Creates the admin account defined by `METABASE_EMAIL` / `METABASE_PASSWORD` (from `docker/.env`).
+  3. Registers the shared PostgreSQL database using the existing credentials.
+  4. Builds two gauge cards backed by the `EXPERTISES` table:
+     - **Total Expertises** – total record count.
+     - **Closed Expertises (%)** – percentage of rows with `status = 'CLOSED'`.
+  5. Adds the cards to the **Expertise Health Overview** dashboard and sets its auto-refresh interval to **120 seconds**.
+- The script outputs `docker/metabase/dashboard_info.json`, containing the dashboard id, slug, and a ready-to-use URL like `http://localhost:3000/dashboard/<id>-<slug>?refresh=120`.
+- To customize the refresh cadence, override `METABASE_REFRESH_SECONDS` in `docker/.env` (default: 120 seconds).
 
 ```bash
 # Stop all containers
