@@ -8,7 +8,7 @@ A web application for financial monitoring. Implements user registration/authent
 
 ## Architecture
 
-ClientStateProfiler follows a **microservice architecture** with an API Gateway, a shared database, and an AI-powered database agent.
+ClientStateProfiler follows a **microservice architecture** with an API Gateway, a shared database, an AI-powered database agent, and a Metabase BI dashboard for expertise monitoring.
 
 ```
 ┌──────────────┐     ┌──────────────┐     ┌───────────────────┐
@@ -44,12 +44,12 @@ ClientStateProfiler follows a **microservice architecture** with an API Gateway,
           │  └────────────────────────────────────────────────────────┘
           │
           │  ┌──────────────────────────────────────────┐
-47 |           │  │ Metabase (dashboards) :3000              │
-48 |           │  └──────────────────────────────────────────┘
-49 |           │
-50 |           └──│ Operator (CLI) — docker exec db_agent    │
-51 |              │ stdin/stdout — natural language queries  │
-52 |              └──────────────────────────────────────────┘
+          │  │ Metabase (dashboards) :3000              │
+          │  └──────────────────────────────────────────┘
+          │  ┌──────────────────────────────────────────┐ 
+          └──│ Operator (CLI) — docker exec db_agent    │
+             │ stdin/stdout — natural language queries  │
+             └──────────────────────────────────────────┘
 ```
 
 
@@ -96,6 +96,7 @@ ClientStateProfiler follows a **microservice architecture** with an API Gateway,
 | **psycopg2-binary** | **≥2.9** | **PostgreSQL connector (DbAgent)** |
 | **Ollama** | **0.30.10** | **Local LLM inference server** |
 | **qwen2.5-coder:7B** | — | **LLM model for natural language → SQL** |
+| **Metabase** | **0.49.14** | **BI and analytics platform for expertise dashboards** |
 | Docker / Docker Compose | — | Containerization |
 | Maven | 3.x | Project build |
 
@@ -189,22 +190,22 @@ ClientStateProfiler follows a **microservice architecture** with an API Gateway,
 | **Infrastructure** | |
 | `Dockerfile` | Python 3.13-slim, gunicorn, static file collection |
 | `requirements.txt` | Django, gunicorn, whitenoise, psycopg2, requests |
-190 | 
-191 | ### 5. Metabase Dashboard (`docker/metabase/`)
-192 | 
-193 | | Characteristic | Value |
-194 | |---|---|
-195 | | Port | `3000` |
-196 | | Technologies | Metabase OSS, PostgreSQL connector |
-197 | | Purpose | Auto-generated dashboard with expertise gauges |
-198 | 
-199 | **Features:**
-200 | - Dockerized Metabase instance attached to the shared PostgreSQL database.
-201 | - Bootstrap script (`docker/metabase/bootstrap.py`) creates the admin user, DB connection, cards, and dashboard automatically.
-202 | - Dashboard "Expertise Health Overview" shows two gauge widgets:
-203 |   1. **Total Expertises** (record count)
-204 |   2. **Closed Expertises (%)** (percentage of `status = 'CLOSED'`)
-205 | - Auto-refresh interval set to **2 minutes**.
+
+### 5. Metabase Dashboard (`docker/metabase/`)
+
+| Characteristic | Value |
+|---|---|
+| Port | `3000` |
+| Technologies | Metabase OSS, PostgreSQL connector |
+| Purpose | Auto-generated dashboard with expertise gauges |
+
+**Features:**
+- Dockerized Metabase instance attached to the shared PostgreSQL database.
+- Bootstrap script (`docker/metabase/bootstrap.py`) creates the admin user, DB connection, cards, and dashboard automatically.
+- Dashboard "Expertise Health Overview" shows two gauge widgets:
+  1. **Total Expertises** (record count)
+  2. **Closed Expertises (%)** (percentage of `status = 'CLOSED'`)
+- Auto-refresh interval set to **2 minutes**.
 
 ---
 
@@ -443,6 +444,9 @@ ClientStateProfiler/
 │       └── web/
 │           ├── css/style.css
 │           └── js/main.js
+├── docker/metabase/               # Metabase BI dashboard
+│   ├── bootstrap.py               # Setup automation script
+│   └── dashboard_info.json        # Output: dashboard metadata
 ├── logs/                          # Application logs
 │   └── archived/                  # Archived log files
 ├── Architecture.md                # Architecture documentation (PlantUML)

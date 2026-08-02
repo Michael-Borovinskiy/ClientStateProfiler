@@ -2,7 +2,7 @@
 
 ## Overview
 
-**ClientStateProfiler** is an educational Java microservice project for monitoring the state of financial institution clients. The system provides user management and expertise (financial monitoring) records with role-based access control.
+**ClientStateProfiler** is an educational Java microservice project for monitoring the state of financial institution clients. The system provides user management and expertise (financial monitoring) records with role-based access control, and is augmented with a Metabase BI dashboard for visualizing expertise data.
 
 ---
 
@@ -24,6 +24,8 @@ System_Boundary(clientstateprofiler, "ClientStateProfiler") {
     ContainerDb(db, "PostgreSQL", "PostgreSQL 16", "Shared relational database. Stores users and expertise records", "port 15432 (host) / 5432 (container)")
     Container(ollama, "Ollama", "Ollama 0.30.10", "Local LLM inference server. Hosts qwen2.5-coder:7B model for natural language to SQL conversion", "port 11434")
     Container(dbagent, "DbAgent", "Python 3.13, Django 5, gunicorn, psycopg2, requests", "AI-powered database agent. Web UI + CLI. Converts natural language queries to SQL, executes them, and summarizes results", "port 8080 (web), 8086 (compose)")
+    Container(metabase, "Metabase", "Metabase v0.49.14", "BI and analytics platform. Hosts dashboards with gauge visualizations of expertise data", "port 3000")
+    Container(metabase_bootstrap, "MetabaseBootstrap", "Python 3.12, requests", "Automates Metabase setup: creates PostgreSQL connection, gauge cards, and dashboard for expertise monitoring", "ephemeral")
 }
 
 Person(browser_agent, "User (Browser/DbAgent)", "Web UI user")
@@ -38,11 +40,16 @@ Rel(dbagent, db, "JDBC (psycopg2)", "any query")
 Rel(dbagent, ollama, "HTTP (REST API)", "/api/generate")
 Rel(browser_agent, dbagent, "HTTP (chat UI)", "localhost:8080")
 Rel(operator, dbagent, "stdin/stdout", "natural language queries (CLI mode)")
+Rel(metabase_bootstrap, metabase, "HTTP (REST API)", "localhost:3000")
+Rel(metabase, db, "JDBC", "read EXPERTISES for dashboards")
 
 Rel_U(gateway, migration, "depends on (docker-compose)", "")
 Rel_U(expertise, migration, "depends on (docker-compose)", "")
 Rel_U(dbagent, ollama, "depends on (docker-compose)", "")
 Rel_U(dbagent, migration, "depends on (docker-compose)", "")
+Rel_U(metabase, migration, "depends on (docker-compose)", "")
+Rel_U(metabase_bootstrap, migration, "depends on (docker-compose)", "")
+Rel_U(metabase_bootstrap, metabase, "depends on (docker-compose)", "")
 
 @enduml
 ```
@@ -204,6 +211,60 @@ Rel_U(dbagent, migration, "depends on (docker-compose)", "")
 
 ---
 
+### 5. Metabase (BI and Analytics Platform)
+
+| Characteristic | Value |
+|---|---|
+| Port | `3000` (host networking) |
+| Image | `metabase/metabase:v0.49.14` |
+| Type | **Persistent** (metabase_data volume for application DB) |
+| Dependency | Starts after PostgreSQL is healthy |
+
+**Purpose:** Self-service BI and analytics platform that connects to the shared PostgreSQL database and provides interactive dashboards for monitoring expertise data. The expertise health dashboard displays gauge cards visualizing key metrics from the `EXPERTISES` table.
+
+**Responsibilities:**
+- Hosts a PostgreSQL database connection to the shared `EXPERTISES` table
+- Serves BI dashboards with real-time gauge visualizations
+- Provides a web-based analytics UI for operational monitoring
+
+**Dashboard — Expertise Health Overview:**
+| Card | SQL Query | Display |
+|---|---|---|
+| Total Expertises | `SELECT COUNT(*)::int AS total_expertises FROM expertises;` | Gauge showing total record count |
+| Closed Expertises (%) | `SELECT COALESCE(ROUND((COUNT(*) FILTER (WHERE status = 'CLOSED')::numeric / NULLIF(COUNT(*), 0)) * 100, 2), 0) AS closed_percentage FROM expertises;` | Gauge showing percentage of closed records |
+
+---
+
+### 6. MetabaseBootstrap (Metabase Setup Automation)
+
+| Characteristic | Value |
+|---|---|
+| Image | `python:3.12-slim` (inline command) |
+| Script | `docker/metabase/bootstrap.py` |
+| Type | **Ephemeral** (terminates after setup completes) |
+| Dependency | Starts after Metabase is started (no healthcheck required) |
+
+**Purpose:** Automates the initial configuration of Metabase so that dashboards are ready immediately without manual setup. The bootstrap script is written in Python 3.12 and uses the `requests` library to interact with the Metabase REST API.
+
+**Workflow (`bootstrap.py`):**
+1. **Wait for Metabase** — polls `/api/health` until Metabase reports `status: "ok"` (timeout: 600 seconds)
+2. **Login or Setup** — attempts to authenticate with existing credentials; if that fails and a `setup-token` is available, runs the first-time setup (creates admin user, configures PostgreSQL database connection, sets site preferences)
+3. **Ensure Database** — checks `/api/database` for an existing PostgreSQL connection; creates one if not found
+4. **Create Gauge Cards** — for each definition in `GAUGE_DEFINITIONS`:
+   - Checks if a card with the same name already exists via `/api/search`
+   - If not, creates a native SQL question (card) with the gauge display type
+5. **Create Dashboard** — creates the `Expertise Health Overview` dashboard (or reuses an existing one by name)
+6. **Place Dashcards** — positions gauge cards on the dashboard using `PUT /api/dashboard/{id}/cards`
+7. **Configure Refresh** — sets the dashboard auto-refresh interval (default: 120 seconds)
+8. **Write Info File** — persists dashboard metadata to `docker/metabase/dashboard_info.json`
+
+**Key source file:**
+| File | Purpose |
+|---|---|
+| `docker/metabase/bootstrap.py` | Standalone Python script that automates all Metabase setup steps via the REST API |
+
+---
+
 ## Database Schema
 
 ### USERS table (GatewayApp → R2DBC)
@@ -309,6 +370,8 @@ spring:
 | `gateway_app` | `../GatewayApp/` | build | `8085:8085` | db (healthy), expertise |
 | `ollama` | — | `ollama/ollama:0.30.10` | `11434:11434` | db (healthy) |
 | `db_agent` | `../DbAgent/` | build | `8086:8086` (host networking, app listens on `8080`) | db (healthy), ollama (healthy) |
+| `metabase` | — | `metabase/metabase:v0.49.14` | `3000` (host networking) | db (healthy) |
+| `metabase_bootstrap` | `..` (root) | `python:3.12-slim` (inline) | — | metabase (started) |
 
 
 ### Multi-stage Dockerfile
@@ -383,6 +446,9 @@ spring:
 | **psycopg2-binary** | **≥2.9** | **PostgreSQL connector (DbAgent)** |
 | **Ollama** | **0.30.10** | **Local LLM inference server (DbAgent dependency)** |
 | **qwen2.5-coder:7B** | — | **LLM model for natural language → SQL (DbAgent)** |
+| **Metabase** | **0.49.14** | **BI and analytics platform for expertise dashboards** |
+| **Python** | **3.12** | **Development language (MetabaseBootstrap)** |
+| **requests** | — | **HTTP client for Metabase API (MetabaseBootstrap)** |
 | Docker / Docker Compose | — | Containerization |
 | BCrypt | — | Password hashing |
 | Maven | 3.x | Project build (Java services) |
@@ -398,3 +464,4 @@ spring:
 5. **Separation of concerns** — clear division: Gateway (authentication + routing), Expertise (business logic), Migration (initialization)
 6. **AI-powered Database Agent** — DbAgent provides a natural language interface to the database using a local LLM (Ollama) for generating SQL queries and summarizing results, enforcing password masking at the prompt level
 7. **Polyglot architecture** — Java microservices coexist with a Python-based AI agent, communicating via shared database and external API (Ollama)
+8. **BI Dashboard Automation** — Metabase provides real-time BI dashboards for expertise monitoring, automated by a bootstrap container that provisions the database connection, gauge cards, and dashboard configuration programmatically
