@@ -2,7 +2,7 @@
 
 ## Overview
 
-**ClientStateProfiler** is an educational Java microservice project for monitoring the state of financial institution clients. The system provides user management and expertise (financial monitoring) records with role-based access control, and is augmented with a Metabase BI dashboard for visualizing expertise data.
+**ClientStateProfiler** is an educational Java/Python microservice project for monitoring the state of financial institution clients. The system provides user management and expertise (financial monitoring) records with role-based access control, and is augmented with a Metabase BI dashboard for visualizing expertise data.
 
 ---
 
