@@ -202,9 +202,10 @@ ClientStateProfiler follows a **microservice architecture** with an API Gateway,
 **Features:**
 - Dockerized Metabase instance attached to the shared PostgreSQL database.
 - Bootstrap script (`docker/metabase/bootstrap.py`) creates the admin user, DB connection, cards, and dashboard automatically.
-- Dashboard "Expertise Health Overview" shows two gauge widgets:
-  1. **Total Expertises** (record count)
-  2. **Closed Expertises (%)** (percentage of `status = 'CLOSED'`)
+- Dashboard "Expertise Health Overview" shows three cards:
+  1. **Total Expertises Over Time (Monthly)** – line chart showing expertise count grouped by month and status
+  2. **Total Expertises** – gauge showing total record count
+  3. **Closed Expertises (%)** – gauge showing percentage of rows with `status = 'CLOSED'`
 - Auto-refresh interval set to **2 minutes**.
 
 ---
@@ -332,9 +333,10 @@ After startup:
   1. Waits for Metabase to report healthy.
   2. Creates the admin account defined by `METABASE_EMAIL` / `METABASE_PASSWORD` (from `docker/.env`).
   3. Registers the shared PostgreSQL database using the existing credentials.
-  4. Builds two gauge cards backed by the `EXPERTISES` table:
-     - **Total Expertises** – total record count.
-     - **Closed Expertises (%)** – percentage of rows with `status = 'CLOSED'`.
+  4. Builds three cards backed by the `EXPERTISES` table:
+     - **Total Expertises Over Time (Monthly)** – line chart showing expertise count grouped by month and status.
+     - **Total Expertises** – total record count (gauge).
+     - **Closed Expertises (%)** – percentage of rows with `status = 'CLOSED'` (gauge).
   5. Adds the cards to the **Expertise Health Overview** dashboard and sets its auto-refresh interval to **120 seconds**.
 - The script outputs `docker/metabase/dashboard_info.json`, containing the dashboard id, slug, and a ready-to-use URL like `http://localhost:3000/dashboard/<id>-<slug>?refresh=120`.
 - To customize the refresh cadence, override `METABASE_REFRESH_SECONDS` in `docker/.env` (default: 120 seconds).
