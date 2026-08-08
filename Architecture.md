@@ -148,6 +148,7 @@ Rel_U(metabase_bootstrap, metabase, "depends on (docker-compose)", "")
 |---|---|
 | `V01__CREATE_USERS.sql` | Insert test users (Leo, Max, Marco, Karl) with BCrypt passwords |
 | `V02__CREATE_EXPERTISES.sql` | Insert test expertise records (5 entries) |
+| `V03__UPDATE_EXPERTISES.sql` | Insert 1000+ expanded expertise records with varied types, statuses, and timestamps spanning June–August 2026 for richer dashboard analytics |
 
 ---
 
@@ -230,6 +231,7 @@ Rel_U(metabase_bootstrap, metabase, "depends on (docker-compose)", "")
 **Dashboard — Expertise Health Overview:**
 | Card | SQL Query | Display |
 |---|---|---|
+| Total Expertises Over Time (Monthly) | `SELECT date_trunc('month', dt_expertise_status) AS month, status, count(*) AS total_expertises FROM expertises GROUP BY date_trunc('month', dt_expertise_status), status ORDER BY month, status;` | Line chart showing expertise count over time, grouped by month and status |
 | Total Expertises | `SELECT COUNT(*)::int AS total_expertises FROM expertises;` | Gauge showing total record count |
 | Closed Expertises (%) | `SELECT COALESCE(ROUND((COUNT(*) FILTER (WHERE status = 'CLOSED')::numeric / NULLIF(COUNT(*), 0)) * 100, 2), 0) AS closed_percentage FROM expertises;` | Gauge showing percentage of closed records |
 
@@ -250,11 +252,11 @@ Rel_U(metabase_bootstrap, metabase, "depends on (docker-compose)", "")
 1. **Wait for Metabase** — polls `/api/health` until Metabase reports `status: "ok"` (timeout: 600 seconds)
 2. **Login or Setup** — attempts to authenticate with existing credentials; if that fails and a `setup-token` is available, runs the first-time setup (creates admin user, configures PostgreSQL database connection, sets site preferences)
 3. **Ensure Database** — checks `/api/database` for an existing PostgreSQL connection; creates one if not found
-4. **Create Gauge Cards** — for each definition in `GAUGE_DEFINITIONS`:
+4. **Create Cards** — for each definition in `CARD_DEFINITIONS`:
    - Checks if a card with the same name already exists via `/api/search`
-   - If not, creates a native SQL question (card) with the gauge display type
+   - If not, creates a native SQL question (card) with the specified display type (gauge or line chart)
 5. **Create Dashboard** — creates the `Expertise Health Overview` dashboard (or reuses an existing one by name)
-6. **Place Dashcards** — positions gauge cards on the dashboard using `PUT /api/dashboard/{id}/cards`
+6. **Place Dashcards** — positions cards on the dashboard using `PUT /api/dashboard/{id}/cards`
 7. **Configure Refresh** — sets the dashboard auto-refresh interval (default: 120 seconds)
 8. **Write Info File** — persists dashboard metadata to `docker/metabase/dashboard_info.json`
 
@@ -364,7 +366,7 @@ spring:
 
 | Service | Build Context | Image | Ports | Dependencies |
 |---|---|---|---|---|
-| `db_postgres_client_profiler` | — | `postgres:latest` | `15432:5432` | — |
+| `db_postgres_client_profiler` | — | `postgres:16` | `15432:5432` | — |
 | `migrate` | `../MigrationService/` | build | — | db (healthy) |
 | `expertise_monitoring` | `../ExpertiseMonitoring/` | build | `8084:8084` | db (healthy) |
 | `gateway_app` | `../GatewayApp/` | build | `8085:8085` | db (healthy), expertise |
