@@ -1,6 +1,6 @@
 # ClientStateProfiler
 
-**Educational Java project: a microservice-based client state monitoring system.**
+**Educational Java/Python project: a microservice-based client state monitoring system.**
 
 A web application for financial monitoring. Implements user registration/authentication with role-based access and CRUD operations for client expertise records.
 
