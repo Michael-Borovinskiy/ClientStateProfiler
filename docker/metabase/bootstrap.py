@@ -59,7 +59,84 @@ METABASE_SITE_NAME = os.getenv("METABASE_SITE_NAME").strip()
 REFRESH_SECONDS = int(os.getenv("METABASE_REFRESH_SECONDS"))
 
 
-GAUGE_DEFINITIONS: List[Dict[str, Any]] = [
+CARD_DEFINITIONS: List[Dict[str, Any]] = [
+    {
+        "name": "Total Expertises Over Time (Monthly)",
+        "description": "Total number of expertises over time, grouped by month and status.",
+        "sql": """
+SELECT
+  date_trunc('month', dt_expertise_status) AS month,
+  status,
+  count(*) AS total_expertises
+FROM expertises
+GROUP BY
+  date_trunc('month', dt_expertise_status),
+  status
+ORDER BY
+  month, status;
+        """,
+        "display": "line",
+        "position": {"col": 0, "row": 8, "sizeX": 24, "sizeY": 16},
+        "visualization_settings": {
+            "graph.metrics": ["total_expertises"],
+            "graph.dimensions": ["month"],
+            "graph.series_dimension": "status",
+            "graph.show_values": False,
+            "graph.x_axis.axis_separator_enabled": "show",
+            "graph.x_axis.axis_separator_frequency": "month",
+            "graph.y_axis.auto_range": True,
+            "graph.y_axis.scale": "linear",
+            "graph.y_axis.labels_enabled": True,
+            "graph.type": "line",
+            "series_settings": {},
+            "stack_type": "none",
+            "show_goal": False,
+            "show_trend": False,
+            "show_mini_bar": False,
+            "show_values": False,
+            "show_labels": True,
+            "label_type": "none",
+            "line_display_mode": "lines",
+            "area_display_mode": "none",
+            "show_area": False,
+            "curve": "linear",
+            "show_dots": True,
+            "x_axis_scale": "timeseries",
+            "y_axis_scale": "linear",
+            "x_axis_offset": 0,
+            "y_axis_offset": 0,
+            "x_axis_label": "Month",
+            "y_axis_label": "Total Expertises",
+            "series_colors": {},
+            "column_settings": {},
+            "show_legend": True,
+            "legend_position": "right",
+            "legend_text_color": "#333333",
+            "legend_background_color": "transparent",
+            "legend_border_color": "transparent",
+            "legend_font_size": 12,
+            "legend_font_weight": "normal",
+            "legend_item_spacing": 10,
+            "legend_item_width": 100,
+            "legend_item_height": 20,
+            "legend_item_border_radius": 3,
+            "legend_item_background_color": "transparent",
+            "legend_item_border_color": "transparent",
+            "legend_item_text_color": "#333333",
+            "legend_item_font_size": 12,
+            "legend_item_font_weight": "normal",
+            "legend_item_hover_background_color": "#f5f5f5",
+            "legend_item_hover_border_color": "#f5f5f5",
+            "legend_item_hover_text_color": "#333333",
+            "legend_item_hover_font_size": 12,
+            "legend_item_hover_font_weight": "normal",
+            "legend_item_active_background_color": "#e0e0e0",
+            "legend_item_active_border_color": "#e0e0e0",
+            "legend_item_active_text_color": "#333333",
+            "legend_item_active_font_size": 12,
+            "legend_item_active_font_weight": "normal"
+        },
+    },
     {
         "name": "Total Expertises",
         "description": "Total number of records in the EXPERTISES table.",
@@ -264,12 +341,7 @@ def search_resource(session_id: str, resource_type: str, name: str) -> Optional[
 def ensure_card(
     session_id: str, database_id: int, definition: Dict[str, Any]
 ) -> int:
-    """Create or retrieve a Metabase card (question)."""
-
-    existing_id = search_resource(session_id, "card", definition["name"])
-    if existing_id:
-        LOGGER.info("Found existing card '%s' (id=%s)", definition["name"], existing_id)
-        return existing_id
+    """Create or update a Metabase card (question)."""
 
     payload = {
         "name": definition["name"],
@@ -288,6 +360,13 @@ def ensure_card(
         "parameters": [],
     }
 
+    existing_id = search_resource(session_id, "card", definition["name"])
+    if existing_id:
+        LOGGER.info("Updating existing card '%s' (id=%s)", definition["name"], existing_id)
+        api_request("PUT", f"/api/card/{existing_id}", session_id=session_id, json=payload)
+        return existing_id
+
+    LOGGER.info("Creating new card '%s'", definition["name"])
     response = api_request("POST", "/api/card", session_id=session_id, json=payload)
     card_id = response.json().get("id")
     if not card_id:
@@ -427,7 +506,7 @@ def main() -> None:
     database_id = ensure_database(session_id)
 
     card_positions: Dict[int, Dict[str, int]] = {}
-    for definition in GAUGE_DEFINITIONS:
+    for definition in CARD_DEFINITIONS:
         card_id = ensure_card(session_id, database_id, definition)
         position = {
             "col": definition["position"].get("col", 0),
