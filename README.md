@@ -2,13 +2,13 @@
 
 **Educational Java/Python project: a microservice-based client state monitoring system.**
 
-A web application for financial monitoring. Implements user registration/authentication with role-based access and CRUD operations for client expertise records.
+A web application for financial monitoring. Implements user registration/authentication with role-based access and CRUD operations for client expertise records. The system additionally replicates expertise data to ClickHouse (OLAP) for analytical workloads.
 
 ---
 
 ## Architecture
 
-ClientStateProfiler follows a **microservice architecture** with an API Gateway, a shared database, an AI-powered database agent, and a Metabase BI dashboard for expertise monitoring.
+ClientStateProfiler follows a **microservice architecture** with an API Gateway, a shared database, an AI-powered database agent, a Metabase BI dashboard for expertise monitoring, and a ClickHouse (OLAP) replica of the expertise table.
 
 ```
 ┌──────────────┐     ┌──────────────┐     ┌───────────────────┐
@@ -50,6 +50,16 @@ ClientStateProfiler follows a **microservice architecture** with an API Gateway,
           └──│ Operator (CLI) — docker exec db_agent    │
              │ stdin/stdout — natural language queries  │
              └──────────────────────────────────────────┘
+
+          ┌─────────────────────────────────────────────────────────┐
+          │ ClickHouse (OLAP) :8123/:9000                           │
+          │      ▲                                                  │
+          │      │ (snapshot every 240s)                            │
+          │  ┌──────────────────────┐                               │
+          │  │ Replicator           │◀─────────────── EXPERTISES    │
+          │  │ (python:3.12-slim)   │                from PostgreSQL│
+          │  └──────────────────────┘                               │
+          └─────────────────────────────────────────────────────────┘
 ```
 
 
@@ -97,6 +107,8 @@ ClientStateProfiler follows a **microservice architecture** with an API Gateway,
 | **Ollama** | **0.30.10** | **Local LLM inference server** |
 | **qwen2.5-coder:7B** | — | **LLM model for natural language → SQL** |
 | **Metabase** | **0.49.14** | **BI and analytics platform for expertise dashboards** |
+| **ClickHouse** | **24.3** | **OLAP columnar database for analytical replication of EXPERTISES** |
+| **clickhouse-driver** | — | **ClickHouse client for Python (Replicator)** |
 | Docker / Docker Compose | — | Containerization |
 | Maven | 3.x | Project build |
 
@@ -202,11 +214,58 @@ ClientStateProfiler follows a **microservice architecture** with an API Gateway,
 **Features:**
 - Dockerized Metabase instance attached to the shared PostgreSQL database.
 - Bootstrap script (`docker/metabase/bootstrap.py`) creates the admin user, DB connection, cards, and dashboard automatically.
-- Dashboard "Expertise Health Overview" shows three cards:
+- Dashboard "Expertise Health Overview" shows five cards:
   1. **Total Expertises Over Time (Monthly)** – line chart showing expertise count grouped by month and status
   2. **Total Expertises** – gauge showing total record count
   3. **Closed Expertises (%)** – gauge showing percentage of rows with `status = 'CLOSED'`
+  4. **Total Expertises Current Month** – gauge showing total record count for the current month
+  5. **Closed Expertises Current Month (%)** – gauge showing percentage of rows with `status = 'CLOSED'` for the current month
 - Auto-refresh interval set to **2 minutes**.
+
+### 6. ClickHouse (OLAP Database) (`docker/`)
+
+| Characteristic | Value |
+|---|---|
+| Ports | `8123` (HTTP), `9000` (native) |
+| Image | `clickhouse/clickhouse-server:24.3` |
+| Volume | `clickhouse_data` (persistent) |
+| Purpose | OLAP columnar database storing a replicated snapshot of the `EXPERTISES` table |
+
+**Features:**
+- Columnar storage for analytical workloads, offloading analytics from transactional PostgreSQL.
+- The `expertises` MergeTree table is created automatically by the replicator:
+
+```sql
+CREATE TABLE IF NOT EXISTS expertises (
+    expertise_type String,
+    client_id String,
+    status String,
+    comment String,
+    dt_expertise_status DateTime
+) ENGINE = MergeTree()
+ORDER BY dt_expertise_status
+```
+
+### 7. Replicator (PostgreSQL → ClickHouse) (`docker/`)
+
+| Characteristic | Value |
+|---|---|
+| Image | `python:3.12-slim` (`docker/replication.Dockerfile`) |
+| Script | `docker/replicate.py` |
+| Type | **Long-running** (snapshot every 240 seconds) |
+| Purpose | Periodically replicates the `EXPERTISES` table from PostgreSQL (OLTP) to ClickHouse (OLAP) |
+
+**Features:**
+- Reads all rows from the PostgreSQL `EXPERTISES` table via `psycopg2`.
+- Connects to ClickHouse via `clickhouse-driver` (native protocol, `localhost:9000`).
+- Truncates the ClickHouse `expertises` table and inserts the full snapshot.
+- Loops every **240 seconds**.
+
+**Key files:**
+| File | Purpose |
+|---|---|
+| `docker/replicate.py` | Snapshot replication script (reads PostgreSQL, writes ClickHouse, loops every 240s) |
+| `docker/replication.Dockerfile` | Builds the replicator image (python:3.12-slim, psycopg2-binary, clickhouse-driver) |
 
 ---
 
@@ -324,7 +383,9 @@ After startup:
 6. **DbAgent** — two interfaces:
    - **Web UI**: open `http://localhost:8080` in your browser
    - **CLI**: attach with `docker exec -it db_agent python /app/src/main.py`
-7. Flyway migrations run automatically when `MigrationService` starts
+7. **ClickHouse** (OLAP) will be available at `localhost:8123` (HTTP) and `localhost:9000` (native)
+8. Flyway migrations run automatically when `MigrationService` starts
+9. The `replicator` service automatically replicates the `EXPERTISES` table from PostgreSQL to ClickHouse every 240 seconds
 
 # Metabase dashboard bootstrap
 
@@ -333,10 +394,12 @@ After startup:
   1. Waits for Metabase to report healthy.
   2. Creates the admin account defined by `METABASE_EMAIL` / `METABASE_PASSWORD` (from `docker/.env`).
   3. Registers the shared PostgreSQL database using the existing credentials.
-  4. Builds three cards backed by the `EXPERTISES` table:
+  4. Builds five cards backed by the `EXPERTISES` table:
      - **Total Expertises Over Time (Monthly)** – line chart showing expertise count grouped by month and status.
      - **Total Expertises** – total record count (gauge).
      - **Closed Expertises (%)** – percentage of rows with `status = 'CLOSED'` (gauge).
+     - **Total Expertises Current Month** – total record count for the current month (gauge).
+     - **Closed Expertises Current Month (%)** – percentage of rows with `status = 'CLOSED'` for the current month (gauge).
   5. Adds the cards to the **Expertise Health Overview** dashboard and sets its auto-refresh interval to **120 seconds**.
 - The script outputs `docker/metabase/dashboard_info.json`, containing the dashboard id, slug, and a ready-to-use URL like `http://localhost:3000/dashboard/<id>-<slug>?refresh=120`.
 - To customize the refresh cadence, override `METABASE_REFRESH_SECONDS` in `docker/.env` (default: 120 seconds).
@@ -409,9 +472,11 @@ java -jar -Djasypt.encryptor.password=commonpoint target/ExpertiseMonitoring-1.0
 ClientStateProfiler/
 ├── docker/                        # Docker infrastructure
 │   ├── docker-compose.yml         # Container orchestration
-│   ├── .env                       # DB + Ollama parameters
+│   ├── .env                       # DB + Ollama + ClickHouse parameters
 │   ├── .env_sc                    # Jasypt password
-│   └── init.sql                   # DB schema initialization
+│   ├── init.sql                   # DB schema initialization
+│   ├── replicate.py               # PostgreSQL → ClickHouse replication script
+│   └── replication.Dockerfile     # Replicator image (python:3.12-slim)
 ├── GatewayApp/                    # API Gateway + User Service
 │   ├── src/main/java/.../         # Java code
 │   └── src/main/resources/       # Configurations, templates, static files
@@ -455,6 +520,14 @@ ClientStateProfiler/
 ├── README.md                      # This file
 └── .gitignore
 ```
+
+### How to Add a New OLAP Replication Target
+
+1. Add the target database service to `docker/docker-compose.yml`
+2. Configure credentials in `docker/.env` (e.g. `CLICKHOUSE_DEFAULT_USER`, `CLICKHOUSE_DEFAULT_PASSWORD`)
+3. Create a replicator script following the pattern of `docker/replicate.py`
+4. Add the corresponding Dockerfile following `docker/replication.Dockerfile`
+5. Add the service to the `replicator` depends_on section
 
 ### How to Add a New Microservice (Java)
 
