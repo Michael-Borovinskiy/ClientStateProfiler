@@ -156,6 +156,25 @@ ORDER BY
         "display": "gauge",
         "position": {"col": 12, "row": 0},
     },
+    {
+        "name": "Total Expertises Current Month",
+        "description": "Total number of records in the EXPERTISES table for current month.",
+        "sql": "SELECT COUNT(*)::int AS total_expertises FROM expertises where dt_expertise_status >= date_trunc('month', CURRENT_DATE)::date;",
+        "display": "gauge",
+        "position": {"col": 0, "row": 0},
+    },
+    {
+        "name": "Closed Expertises Current Month (%)",
+        "description": (
+            "Percentage of expertise records currently marked as CLOSED for current month."
+        ),
+        "sql": (
+            "SELECT COALESCE(ROUND((COUNT(*) FILTER (WHERE status = 'CLOSED')::numeric / "
+            "NULLIF(COUNT(*), 0)) * 100, 2), 0) AS closed_percentage FROM expertises where dt_expertise_status >= date_trunc('month', CURRENT_DATE)::date;"
+        ),
+        "display": "gauge",
+        "position": {"col": 12, "row": 0},
+    },
 ]
 
 
