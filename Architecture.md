@@ -2,7 +2,7 @@
 
 ## Overview
 
-**ClientStateProfiler** is an educational Java/Python microservice project for monitoring the state of financial institution clients. The system provides user management and expertise (financial monitoring) records with role-based access control, and is augmented with a Metabase BI dashboard for visualizing expertise data.
+**ClientStateProfiler** is an educational Java/Python microservice project for monitoring the state of financial institution clients. The system provides user management and expertise (financial monitoring) records with role-based access control, is augmented with a Metabase BI dashboard for visualizing expertise data, and replicates the expertise table to ClickHouse (OLAP) for analytical workloads.
 
 ---
 
@@ -26,6 +26,8 @@ System_Boundary(clientstateprofiler, "ClientStateProfiler") {
     Container(dbagent, "DbAgent", "Python 3.13, Django 5, gunicorn, psycopg2, requests", "AI-powered database agent. Web UI + CLI. Converts natural language queries to SQL, executes them, and summarizes results", "port 8080 (web), 8086 (compose)")
     Container(metabase, "Metabase", "Metabase v0.49.14", "BI and analytics platform. Hosts dashboards with gauge visualizations of expertise data", "port 3000")
     Container(metabase_bootstrap, "MetabaseBootstrap", "Python 3.12, requests", "Automates Metabase setup: creates PostgreSQL connection, gauge cards, and dashboard for expertise monitoring", "ephemeral")
+    Container(clickhouse, "ClickHouse", "ClickHouse 24.3", "OLAP columnar database. Stores a replicated copy of the EXPERTISES table for analytical workloads", "port 8123 (HTTP), 9000 (native)")
+    Container(replicator, "Replicator", "Python 3.12, psycopg2, clickhouse-driver", "Periodically replicates the EXPERTISES table from PostgreSQL to ClickHouse (every 240 seconds)", "long-running")
 }
 
 Person(browser_agent, "User (Browser/DbAgent)", "Web UI user")
@@ -50,6 +52,10 @@ Rel_U(dbagent, migration, "depends on (docker-compose)", "")
 Rel_U(metabase, migration, "depends on (docker-compose)", "")
 Rel_U(metabase_bootstrap, migration, "depends on (docker-compose)", "")
 Rel_U(metabase_bootstrap, metabase, "depends on (docker-compose)", "")
+Rel(replicator, db, "JDBC (psycopg2)", "read EXPERTISES every 240s")
+Rel(replicator, clickhouse, "native protocol (clickhouse-driver)", "INSERT EXPERTISES")
+Rel_U(replicator, db, "depends on (docker-compose)", "")
+Rel_U(replicator, clickhouse, "depends on (docker-compose)", "")
 
 @enduml
 ```
@@ -234,6 +240,8 @@ Rel_U(metabase_bootstrap, metabase, "depends on (docker-compose)", "")
 | Total Expertises Over Time (Monthly) | `SELECT date_trunc('month', dt_expertise_status) AS month, status, count(*) AS total_expertises FROM expertises GROUP BY date_trunc('month', dt_expertise_status), status ORDER BY month, status;` | Line chart showing expertise count over time, grouped by month and status |
 | Total Expertises | `SELECT COUNT(*)::int AS total_expertises FROM expertises;` | Gauge showing total record count |
 | Closed Expertises (%) | `SELECT COALESCE(ROUND((COUNT(*) FILTER (WHERE status = 'CLOSED')::numeric / NULLIF(COUNT(*), 0)) * 100, 2), 0) AS closed_percentage FROM expertises;` | Gauge showing percentage of closed records |
+| Total Expertises Current Month | `SELECT COUNT(*)::int AS total_expertises FROM expertises where dt_expertise_status >= date_trunc('month', CURRENT_DATE)::date;` | Gauge showing total record count for the current month |
+| Closed Expertises Current Month (%) | `SELECT COALESCE(ROUND((COUNT(*) FILTER (WHERE status = 'CLOSED')::numeric / NULLIF(COUNT(*), 0)) * 100, 2), 0) AS closed_percentage FROM expertises where dt_expertise_status >= date_trunc('month', CURRENT_DATE)::date;` | Gauge showing percentage of closed records for the current month |
 
 ---
 
@@ -264,6 +272,59 @@ Rel_U(metabase_bootstrap, metabase, "depends on (docker-compose)", "")
 | File | Purpose |
 |---|---|
 | `docker/metabase/bootstrap.py` | Standalone Python script that automates all Metabase setup steps via the REST API |
+
+---
+
+### 7. ClickHouse (OLAP Database)
+
+| Characteristic | Value |
+|---|---|
+| Image | `clickhouse/clickhouse-server:24.3` |
+| Ports | `8123` (HTTP), `9000` (native) |
+| Volume | `clickhouse_data` (persistent) |
+| Type | **Persistent** |
+| Dependency | None (independent of PostgreSQL) |
+
+**Purpose:** OLAP columnar database that stores a replicated snapshot of the `EXPERTISES` table for analytical workloads, offloading analytics from the transactional PostgreSQL database.
+
+**ClickHouse table (created automatically by the replicator):**
+
+```sql
+CREATE TABLE IF NOT EXISTS expertises (
+    expertise_type String,
+    client_id String,
+    status String,
+    comment String,
+    dt_expertise_status DateTime
+) ENGINE = MergeTree()
+ORDER BY dt_expertise_status
+```
+
+---
+
+### 8. Replicator (PostgreSQL → ClickHouse Replication)
+
+| Characteristic | Value |
+|---|---|
+| Image | `python:3.12-slim` (`docker/replication.Dockerfile`) |
+| Script | `docker/replicate.py` |
+| Type | **Long-running** (repeats every 240 seconds) |
+| Dependency | PostgreSQL (healthy), ClickHouse (healthy) |
+
+**Purpose:** Periodically replicates the `EXPERTISES` table from PostgreSQL (OLTP) to ClickHouse (OLAP) so that dashboards and analytical queries run against a columnar replica.
+
+**Workflow (`replicate.py`):**
+1. Connects to PostgreSQL using `POSTGRES_*` environment variables (`psycopg2`) and reads all rows from the `EXPERTISES` table
+2. Connects to ClickHouse using `clickhouse-driver` (native protocol, `localhost:9000`)
+3. Ensures the `expertises` MergeTree table exists (creates it if missing)
+4. Truncates the ClickHouse `expertises` table and inserts the full snapshot
+5. Sleeps 240 seconds and repeats
+
+**Key files:**
+| File | Purpose |
+|---|---|
+| `docker/replicate.py` | Snapshot replication script (reads PostgreSQL, writes ClickHouse, loops every 240s) |
+| `docker/replication.Dockerfile` | Builds the replicator image (python:3.12-slim, psycopg2-binary, clickhouse-driver) |
 
 ---
 
@@ -374,6 +435,8 @@ spring:
 | `db_agent` | `../DbAgent/` | build | `8086:8086` (host networking, app listens on `8080`) | db (healthy), ollama (healthy) |
 | `metabase` | — | `metabase/metabase:v0.49.14` | `3000` (host networking) | db (healthy) |
 | `metabase_bootstrap` | `..` (root) | `python:3.12-slim` (inline) | — | metabase (started) |
+| `clickhouse` | — | `clickhouse/clickhouse-server:24.3` | `8123:8123`, `9000:9000` | — |
+| `replicator` | `.` (docker/) | `replication.Dockerfile` (python:3.12-slim) | host networking | db (healthy), clickhouse (healthy) |
 
 
 ### Multi-stage Dockerfile
@@ -449,8 +512,10 @@ spring:
 | **Ollama** | **0.30.10** | **Local LLM inference server (DbAgent dependency)** |
 | **qwen2.5-coder:7B** | — | **LLM model for natural language → SQL (DbAgent)** |
 | **Metabase** | **0.49.14** | **BI and analytics platform for expertise dashboards** |
-| **Python** | **3.12** | **Development language (MetabaseBootstrap)** |
+| **Python** | **3.12** | **Development language (MetabaseBootstrap, Replicator)** |
 | **requests** | — | **HTTP client for Metabase API (MetabaseBootstrap)** |
+| **ClickHouse** | **24.3** | **OLAP columnar database for analytical replication of EXPERTISES** |
+| **clickhouse-driver** | — | **ClickHouse client for Python (Replicator)** |
 | Docker / Docker Compose | — | Containerization |
 | BCrypt | — | Password hashing |
 | Maven | 3.x | Project build (Java services) |
@@ -467,3 +532,4 @@ spring:
 6. **AI-powered Database Agent** — DbAgent provides a natural language interface to the database using a local LLM (Ollama) for generating SQL queries and summarizing results, enforcing password masking at the prompt level
 7. **Polyglot architecture** — Java microservices coexist with a Python-based AI agent, communicating via shared database and external API (Ollama)
 8. **BI Dashboard Automation** — Metabase provides real-time BI dashboards for expertise monitoring, automated by a bootstrap container that provisions the database connection, gauge cards, and dashboard configuration programmatically
+9. **OLAP replication** — the `EXPERTISES` table is periodically replicated from PostgreSQL (OLTP) to ClickHouse (OLAP) by a dedicated `replicator` service, enabling analytical workloads on a columnar store
