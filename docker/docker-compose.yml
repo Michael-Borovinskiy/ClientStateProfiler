@@ -1,4 +1,3 @@
-version: '3.4'
 services:
   db_postgres_client_profiler:
     image: 'postgres:16'
@@ -150,6 +149,51 @@ services:
         condition: service_healthy
     network_mode: host
 
+  clickhouse:
+    image: clickhouse/clickhouse-server:24.3
+    container_name: clickhouse
+    ports:
+      - "8123:8123"
+      - "9000:9000"
+    environment:
+      - CLICKHOUSE_DEFAULT_USER=${CLICKHOUSE_DEFAULT_USER}
+      - CLICKHOUSE_DEFAULT_PASSWORD=${CLICKHOUSE_DEFAULT_PASSWORD}
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
+    command: >
+      bash -c "
+        if [ ! -f /etc/clickhouse-server/users.d/default-password.xml ]; then
+          echo \"<yandex><users><default><password>${CLICKHOUSE_DEFAULT_PASSWORD}</password><access_management>1</access_management></default></users></yandex>\" > /etc/clickhouse-server/users.d/default-password.xml
+        fi &&
+        /entrypoint.sh
+      "
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:8123/ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  replicator:
+    build:
+      context: .
+      dockerfile: replication.Dockerfile
+    container_name: replicator
+    environment:
+      - POSTGRES_HOST=${POSTGRES_HOST}
+      - POSTGRES_PORT=${POSTGRES_PORT}
+      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - CLICKHOUSE_DEFAULT_USER=${CLICKHOUSE_DEFAULT_USER}
+      - CLICKHOUSE_DEFAULT_PASSWORD=${CLICKHOUSE_DEFAULT_PASSWORD}
+    depends_on:
+      db_postgres_client_profiler:
+        condition: service_healthy
+      clickhouse:
+        condition: service_healthy
+    network_mode: host
+
 volumes:
   ollama_data:
   metabase_data:
+  clickhouse_data:
