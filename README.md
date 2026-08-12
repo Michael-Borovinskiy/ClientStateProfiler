@@ -16,7 +16,7 @@ ClientStateProfiler follows a **microservice architecture** with an API Gateway,
 │  (Thymeleaf) │     │  :8085       │     │  :8084            │
 └──────────────┘     │ WebFlux      │     │ Spring MVC        │
                      │ R2DBC        │     │ JPA/Hibernate     │
-                     └──────┬───────┘     └────────┬──────────┘
+                     └──────┬───────┘     └─────────┬─────────┘
                             │                       │
           ┌─────────────────┼───────────────────────┼──────────────────┐
           │                 ▼                       ▼                  │
@@ -54,10 +54,10 @@ ClientStateProfiler follows a **microservice architecture** with an API Gateway,
           ┌─────────────────────────────────────────────────────────┐
           │ ClickHouse (OLAP) :8123/:9000                           │
           │      ▲                                                  │
-          │      │ (snapshot every 240s)                            │
+          │      │ (polling every 240s)                             │
           │  ┌──────────────────────┐                               │
-          │  │ Replicator           │◀─────────────── EXPERTISES    │
-          │  │ (python:3.12-slim)   │                from PostgreSQL│
+          │  │ Chug (Go binary)     │◀─────────────── EXPERTISES    │
+          │  │ (chug ingest)        │                from PostgreSQL│
           │  └──────────────────────┘                               │
           └─────────────────────────────────────────────────────────┘
 ```
@@ -108,7 +108,7 @@ ClientStateProfiler follows a **microservice architecture** with an API Gateway,
 | **qwen2.5-coder:7B** | — | **LLM model for natural language → SQL** |
 | **Metabase** | **0.49.14** | **BI and analytics platform for expertise dashboards** |
 | **ClickHouse** | **24.3** | **OLAP columnar database for analytical replication of EXPERTISES** |
-| **clickhouse-driver** | — | **ClickHouse client for Python (Replicator)** |
+| **Go** | **1.23.6** | **Development language (Chug replication tool)** |
 | Docker / Docker Compose | — | Containerization |
 | Maven | 3.x | Project build |
 
@@ -233,10 +233,11 @@ ClientStateProfiler follows a **microservice architecture** with an API Gateway,
 
 **Features:**
 - Columnar storage for analytical workloads, offloading analytics from transactional PostgreSQL.
-- The `expertises` MergeTree table is created automatically by the replicator:
+- The `expertises` MergeTree table is created automatically by `chug`:
 
 ```sql
 CREATE TABLE IF NOT EXISTS expertises (
+    id Int64,
     expertise_type String,
     client_id String,
     status String,
@@ -246,26 +247,26 @@ CREATE TABLE IF NOT EXISTS expertises (
 ORDER BY dt_expertise_status
 ```
 
-### 7. Replicator (PostgreSQL → ClickHouse) (`docker/`)
+### 7. Chug (PostgreSQL → ClickHouse) (`docker/`)
 
 | Characteristic | Value |
 |---|---|
-| Image | `python:3.12-slim` (`docker/replication.Dockerfile`) |
-| Script | `docker/replicate.py` |
-| Type | **Long-running** (snapshot every 240 seconds) |
-| Purpose | Periodically replicates the `EXPERTISES` table from PostgreSQL (OLTP) to ClickHouse (OLAP) |
+| Image | `docker/replication.Dockerfile` (Go multi-stage build) |
+| Configuration | `docker/.chug.yaml` |
+| Type | **Long-running** (polling every 240 seconds) |
+| Purpose | Periodically replicates the `EXPERTISES` table from PostgreSQL (OLTP) to ClickHouse (OLAP) using the Go-based `chug` binary (from `github.com/pixperk/chug`) |
 
 **Features:**
-- Reads all rows from the PostgreSQL `EXPERTISES` table via `psycopg2`.
-- Connects to ClickHouse via `clickhouse-driver` (native protocol, `localhost:9000`).
-- Truncates the ClickHouse `expertises` table and inserts the full snapshot.
-- Loops every **240 seconds**.
+- The `chug` binary is launched with the `ingest` subcommand and connection strings for both PostgreSQL and ClickHouse.
+- Reads `docker/.chug.yaml` configuration which defines the `expertises` table with polling-based delta replication using `dt_expertise_status` as the delta column.
+- Every **240 seconds** (`interval_seconds`), `chug` polls for new/changed rows and replicates them to ClickHouse.
+- Batch size is configured at **500 rows per batch**.
 
 **Key files:**
 | File | Purpose |
 |---|---|
-| `docker/replicate.py` | Snapshot replication script (reads PostgreSQL, writes ClickHouse, loops every 240s) |
-| `docker/replication.Dockerfile` | Builds the replicator image (python:3.12-slim, psycopg2-binary, clickhouse-driver) |
+| `docker/.chug.yaml` | Chug configuration: batch size, table definitions, polling interval |
+| `docker/replication.Dockerfile` | Multi-stage Go build: compiles `chug` from source, runs in Alpine |
 
 ---
 
@@ -385,7 +386,7 @@ After startup:
    - **CLI**: attach with `docker exec -it db_agent python /app/src/main.py`
 7. **ClickHouse** (OLAP) will be available at `localhost:8123` (HTTP) and `localhost:9000` (native)
 8. Flyway migrations run automatically when `MigrationService` starts
-9. The `replicator` service automatically replicates the `EXPERTISES` table from PostgreSQL to ClickHouse every 240 seconds
+9. The `chug` service automatically replicates the `EXPERTISES` table from PostgreSQL to ClickHouse every 240 seconds
 
 # Metabase dashboard bootstrap
 
@@ -474,9 +475,9 @@ ClientStateProfiler/
 │   ├── docker-compose.yml         # Container orchestration
 │   ├── .env                       # DB + Ollama + ClickHouse parameters
 │   ├── .env_sc                    # Jasypt password
+│   ├── .chug.yaml                 # Chug replication configuration
 │   ├── init.sql                   # DB schema initialization
-│   ├── replicate.py               # PostgreSQL → ClickHouse replication script
-│   └── replication.Dockerfile     # Replicator image (python:3.12-slim)
+│   └── replication.Dockerfile     # Chug image (Go multi-stage build)
 ├── GatewayApp/                    # API Gateway + User Service
 │   ├── src/main/java/.../         # Java code
 │   └── src/main/resources/       # Configurations, templates, static files
@@ -525,9 +526,8 @@ ClientStateProfiler/
 
 1. Add the target database service to `docker/docker-compose.yml`
 2. Configure credentials in `docker/.env` (e.g. `CLICKHOUSE_DEFAULT_USER`, `CLICKHOUSE_DEFAULT_PASSWORD`)
-3. Create a replicator script following the pattern of `docker/replicate.py`
-4. Add the corresponding Dockerfile following `docker/replication.Dockerfile`
-5. Add the service to the `replicator` depends_on section
+3. Add a table definition to `docker/.chug.yaml` following the pattern of the `expertises` entry
+4. Ensure the `chug` service depends on the new target database in `docker/docker-compose.yml`
 
 ### How to Add a New Microservice (Java)
 

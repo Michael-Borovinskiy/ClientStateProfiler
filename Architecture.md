@@ -27,7 +27,7 @@ System_Boundary(clientstateprofiler, "ClientStateProfiler") {
     Container(metabase, "Metabase", "Metabase v0.49.14", "BI and analytics platform. Hosts dashboards with gauge visualizations of expertise data", "port 3000")
     Container(metabase_bootstrap, "MetabaseBootstrap", "Python 3.12, requests", "Automates Metabase setup: creates PostgreSQL connection, gauge cards, and dashboard for expertise monitoring", "ephemeral")
     Container(clickhouse, "ClickHouse", "ClickHouse 24.3", "OLAP columnar database. Stores a replicated copy of the EXPERTISES table for analytical workloads", "port 8123 (HTTP), 9000 (native)")
-    Container(replicator, "Replicator", "Python 3.12, psycopg2, clickhouse-driver", "Periodically replicates the EXPERTISES table from PostgreSQL to ClickHouse (every 240 seconds)", "long-running")
+    Container(chug, "Chug", "Go (chug binary)", "Periodically replicates the EXPERTISES table from PostgreSQL to ClickHouse (every 240 seconds)", "long-running")
 }
 
 Person(browser_agent, "User (Browser/DbAgent)", "Web UI user")
@@ -52,10 +52,10 @@ Rel_U(dbagent, migration, "depends on (docker-compose)", "")
 Rel_U(metabase, migration, "depends on (docker-compose)", "")
 Rel_U(metabase_bootstrap, migration, "depends on (docker-compose)", "")
 Rel_U(metabase_bootstrap, metabase, "depends on (docker-compose)", "")
-Rel(replicator, db, "JDBC (psycopg2)", "read EXPERTISES every 240s")
-Rel(replicator, clickhouse, "native protocol (clickhouse-driver)", "INSERT EXPERTISES")
-Rel_U(replicator, db, "depends on (docker-compose)", "")
-Rel_U(replicator, clickhouse, "depends on (docker-compose)", "")
+Rel(chug, db, "JDBC (psycopg2)", "read EXPERTISES every 240s")
+Rel(chug, clickhouse, "native protocol (clickhouse-driver)", "INSERT EXPERTISES")
+Rel_U(chug, db, "depends on (docker-compose)", "")
+Rel_U(chug, clickhouse, "depends on (docker-compose)", "")
 
 @enduml
 ```
@@ -287,10 +287,11 @@ Rel_U(replicator, clickhouse, "depends on (docker-compose)", "")
 
 **Purpose:** OLAP columnar database that stores a replicated snapshot of the `EXPERTISES` table for analytical workloads, offloading analytics from the transactional PostgreSQL database.
 
-**ClickHouse table (created automatically by the replicator):**
+**ClickHouse table (created automatically by chug):**
 
 ```sql
 CREATE TABLE IF NOT EXISTS expertises (
+    id Int64,
     expertise_type String,
     client_id String,
     status String,
@@ -302,29 +303,28 @@ ORDER BY dt_expertise_status
 
 ---
 
-### 8. Replicator (PostgreSQL → ClickHouse Replication)
+### 8. Chug (PostgreSQL → ClickHouse Replication)
 
 | Characteristic | Value |
 |---|---|
-| Image | `python:3.12-slim` (`docker/replication.Dockerfile`) |
-| Script | `docker/replicate.py` |
-| Type | **Long-running** (repeats every 240 seconds) |
+| Image | `docker/replication.Dockerfile` (Go build) |
+| Configuration | `docker/.chug.yaml` |
+| Type | **Long-running** (polling every 240 seconds) |
 | Dependency | PostgreSQL (healthy), ClickHouse (healthy) |
 
-**Purpose:** Periodically replicates the `EXPERTISES` table from PostgreSQL (OLTP) to ClickHouse (OLAP) so that dashboards and analytical queries run against a columnar replica.
+**Purpose:** Periodically replicates the `EXPERTISES` table from PostgreSQL (OLTP) to ClickHouse (OLAP) so that dashboards and analytical queries run against a columnar replica. 
 
-**Workflow (`replicate.py`):**
-1. Connects to PostgreSQL using `POSTGRES_*` environment variables (`psycopg2`) and reads all rows from the `EXPERTISES` table
-2. Connects to ClickHouse using `clickhouse-driver` (native protocol, `localhost:9000`)
-3. Ensures the `expertises` MergeTree table exists (creates it if missing)
-4. Truncates the ClickHouse `expertises` table and inserts the full snapshot
-5. Sleeps 240 seconds and repeats
+**Workflow:**
+1. The `chug` binary (built from `github.com/pixperk/chug`) is launched with the `ingest` subcommand and connection strings for both PostgreSQL and ClickHouse
+2. It reads the `docker/.chug.yaml` configuration which defines the `expertises` table with polling-based delta replication using `dt_expertise_status` as the delta column
+3. Every 240 seconds (`interval_seconds`), `chug` polls for new/changed rows and replicates them to ClickHouse
+4. Batch size is configured at 500 rows per batch
 
 **Key files:**
 | File | Purpose |
 |---|---|
-| `docker/replicate.py` | Snapshot replication script (reads PostgreSQL, writes ClickHouse, loops every 240s) |
-| `docker/replication.Dockerfile` | Builds the replicator image (python:3.12-slim, psycopg2-binary, clickhouse-driver) |
+| `docker/.chug.yaml` | Chug configuration: batch size, table definitions, polling interval |
+| `docker/replication.Dockerfile` | Multi-stage build: compiles the `chug` Go binary from source, runs in Alpine |
 
 ---
 
@@ -436,7 +436,7 @@ spring:
 | `metabase` | — | `metabase/metabase:v0.49.14` | `3000` (host networking) | db (healthy) |
 | `metabase_bootstrap` | `..` (root) | `python:3.12-slim` (inline) | — | metabase (started) |
 | `clickhouse` | — | `clickhouse/clickhouse-server:24.3` | `8123:8123`, `9000:9000` | — |
-| `replicator` | `.` (docker/) | `replication.Dockerfile` (python:3.12-slim) | host networking | db (healthy), clickhouse (healthy) |
+| `chug` | `.` (docker/) | `replication.Dockerfile` (Go build) | host networking | db (healthy), clickhouse (healthy) |
 
 
 ### Multi-stage Dockerfile
@@ -512,10 +512,10 @@ spring:
 | **Ollama** | **0.30.10** | **Local LLM inference server (DbAgent dependency)** |
 | **qwen2.5-coder:7B** | — | **LLM model for natural language → SQL (DbAgent)** |
 | **Metabase** | **0.49.14** | **BI and analytics platform for expertise dashboards** |
-| **Python** | **3.12** | **Development language (MetabaseBootstrap, Replicator)** |
+| **Python** | **3.12** | **Development language (MetabaseBootstrap)** |
 | **requests** | — | **HTTP client for Metabase API (MetabaseBootstrap)** |
 | **ClickHouse** | **24.3** | **OLAP columnar database for analytical replication of EXPERTISES** |
-| **clickhouse-driver** | — | **ClickHouse client for Python (Replicator)** |
+| **Go** | **1.23.6** | **Development language (Chug replication tool)** |
 | Docker / Docker Compose | — | Containerization |
 | BCrypt | — | Password hashing |
 | Maven | 3.x | Project build (Java services) |
@@ -532,4 +532,4 @@ spring:
 6. **AI-powered Database Agent** — DbAgent provides a natural language interface to the database using a local LLM (Ollama) for generating SQL queries and summarizing results, enforcing password masking at the prompt level
 7. **Polyglot architecture** — Java microservices coexist with a Python-based AI agent, communicating via shared database and external API (Ollama)
 8. **BI Dashboard Automation** — Metabase provides real-time BI dashboards for expertise monitoring, automated by a bootstrap container that provisions the database connection, gauge cards, and dashboard configuration programmatically
-9. **OLAP replication** — the `EXPERTISES` table is periodically replicated from PostgreSQL (OLTP) to ClickHouse (OLAP) by a dedicated `replicator` service, enabling analytical workloads on a columnar store
+9. **OLAP replication** — the `EXPERTISES` table is periodically replicated from PostgreSQL (OLTP) to ClickHouse (OLAP) by the `chug` service (Go-based polling tool), enabling analytical workloads on a columnar store
