@@ -1,9 +1,18 @@
-FROM python:3.12-slim
+FROM golang:1.23.6-alpine AS builder
 
+RUN apk add --no-cache git
+
+RUN git clone https://github.com/pixperk/chug.git /app
 WORKDIR /app
 
-RUN pip install psycopg2-binary clickhouse-driver
+RUN go build -o chug .
 
-COPY replicate.py .
+FROM alpine:latest
 
-CMD ["python", "replicate.py"]
+WORKDIR /root/
+
+COPY --from=builder /app/chug .
+
+COPY .chug.yaml .
+
+ENTRYPOINT ["./chug"]
