@@ -8,7 +8,7 @@ A web application for financial monitoring. Implements user registration/authent
 
 ## Architecture
 
-ClientStateProfiler follows a **microservice architecture** with an API Gateway, a shared database, an AI-powered database agent, a Metabase BI dashboard for expertise monitoring, and a ClickHouse (OLAP) replica of the expertise table.
+ClientStateProfiler follows a **microservice architecture** with an API Gateway, a shared database, an AI-powered database agent, a Metabase BI dashboard for expertise monitoring (backed by ClickHouse), and a ClickHouse (OLAP) replica of the expertise table.
 
 ```
 ┌──────────────┐     ┌──────────────┐     ┌───────────────────┐
@@ -43,23 +43,29 @@ ClientStateProfiler follows a **microservice architecture** with an API Gateway,
           │  │              └──────────────────┴──────────────┘       │
           │  └────────────────────────────────────────────────────────┘
           │
-          │  ┌──────────────────────────────────────────┐
-          │  │ Metabase (dashboards) :3000              │
-          │  └──────────────────────────────────────────┘
-          │  ┌──────────────────────────────────────────┐ 
-          └──│ Operator (CLI) — docker exec db_agent    │
-             │ stdin/stdout — natural language queries  │
-             └──────────────────────────────────────────┘
-
-          ┌─────────────────────────────────────────────────────────┐
-          │ ClickHouse (OLAP) :8123/:9000                           │
-          │      ▲                                                  │
-          │      │ (polling every 240s)                             │
-          │  ┌──────────────────────┐                               │
-          │  │ Chug (Go binary)     │◀─────────────── EXPERTISES    │
-          │  │ (chug ingest)        │                from PostgreSQL│
-          │  └──────────────────────┘                               │
-          └─────────────────────────────────────────────────────────┘
+          │  
+          │  
+          │  
+          │  ┌───────────────────────────────────────────┐
+          └──│ Operator (CLI) — docker exec db_agent     │
+             │ stdin/stdout — natural language queries   │
+             └───────────────────────────────────────────┘
+                                                                                  
+             ┌───────────────────────────────────────────┐           
+             │ Metabase (dashboards) :3000               │                                   
+             └───────────────────────────────────────────┘     
+                 ▲                           
+                 │ (Metabase dashboard reads)                                                                
+          ┌──────────────────────────────────────────────────────────────────────────┐
+          │     ClickHouse (OLAP) :8123/:9000                                        │
+          │                                                                          │
+          │      ▲                                                                   │
+          │      │ (polling every 240s)                                              │
+          │  ┌──────────────────────┐                                                │
+          │  │  Chug (Go binary)    │◀ ── ── ── ── ──  EXPERTISES                    │
+          │  │  (chug ingest)       │                from PostgreSQL                 │
+          │  └──────────────────────┘                                                │
+          └──────────────────────────────────────────────────────────────────────────┘
 ```
 
 
@@ -107,6 +113,7 @@ ClientStateProfiler follows a **microservice architecture** with an API Gateway,
 | **Ollama** | **0.30.10** | **Local LLM inference server** |
 | **qwen2.5-coder:7B** | — | **LLM model for natural language → SQL** |
 | **Metabase** | **0.49.14** | **BI and analytics platform for expertise dashboards** |
+| **Metabase ClickHouse driver** | **1.5.1** | **JDBC plugin added to the Metabase image via `docker/metabase/Dockerfile`** |
 | **ClickHouse** | **24.3** | **OLAP columnar database for analytical replication of EXPERTISES** |
 | **Go** | **1.23.6** | **Development language (Chug replication tool)** |
 | Docker / Docker Compose | — | Containerization |
@@ -208,12 +215,13 @@ ClientStateProfiler follows a **microservice architecture** with an API Gateway,
 | Characteristic | Value |
 |---|---|
 | Port | `3000` |
-| Technologies | Metabase OSS, PostgreSQL connector |
+| Technologies | Metabase OSS + ClickHouse driver 1.5.1 |
 | Purpose | Auto-generated dashboard with expertise gauges |
 
 **Features:**
-- Dockerized Metabase instance attached to the shared PostgreSQL database.
-- Bootstrap script (`docker/metabase/bootstrap.py`) creates the admin user, DB connection, cards, and dashboard automatically.
+- Dockerized Metabase instance built from `docker/metabase/Dockerfile` (Metabase OSS v0.49.14 + ClickHouse driver 1.5.1), attached to the shared ClickHouse database.
+- All dashboard queries read the replicated `EXPERTISES` table directly from ClickHouse (OLAP) via the bundled ClickHouse driver.
+- Bootstrap script (`docker/metabase/bootstrap.py`) creates the admin user, ClickHouse DB connection, cards, and dashboard automatically.
 - Dashboard "Expertise Health Overview" shows five cards:
   1. **Total Expertises Over Time (Monthly)** – line chart showing expertise count grouped by month and status
   2. **Total Expertises** – gauge showing total record count
@@ -233,6 +241,7 @@ ClientStateProfiler follows a **microservice architecture** with an API Gateway,
 
 **Features:**
 - Columnar storage for analytical workloads, offloading analytics from transactional PostgreSQL.
+- Serves the Metabase dashboard: Metabase reads the replicated `EXPERTISES` table over HTTP (port `8123`) via the bundled ClickHouse driver.
 - The `expertises` MergeTree table is created automatically by `chug`:
 
 ```sql
@@ -266,7 +275,7 @@ ORDER BY dt_expertise_status
 | File | Purpose |
 |---|---|
 | `docker/.chug.yaml` | Chug configuration: batch size, table definitions, polling interval |
-| `docker/replication.Dockerfile` | Multi-stage Go build: compiles `chug` from source, runs in Alpine |
+| `docker/replication.Dockerfile` | Multi-stage Go build: compiles `chug` from source, runs in Alpine 3.18 |
 
 ---
 
@@ -390,11 +399,11 @@ After startup:
 
 # Metabase dashboard bootstrap
 
-- A dedicated `metabase` service (Metabase OSS) is bundled into Docker Compose and stores its application data inside the `metabase_data` volume.
+- A dedicated `metabase` service (Metabase OSS v0.49.14 + ClickHouse driver 1.5.1, built from `docker/metabase/Dockerfile`) is bundled into Docker Compose and stores its application data inside the `metabase_data` volume.
 - On startup, the `metabase_bootstrap` helper container executes `docker/metabase/bootstrap.py` which:
   1. Waits for Metabase to report healthy.
   2. Creates the admin account defined by `METABASE_EMAIL` / `METABASE_PASSWORD` (from `docker/.env`).
-  3. Registers the shared PostgreSQL database using the existing credentials.
+  3. Registers the shared ClickHouse database using the `CLICKHOUSE_*` credentials from `docker/.env`.
   4. Builds five cards backed by the `EXPERTISES` table:
      - **Total Expertises Over Time (Monthly)** – line chart showing expertise count grouped by month and status.
      - **Total Expertises** – total record count (gauge).
@@ -513,6 +522,7 @@ ClientStateProfiler/
 │           ├── css/style.css
 │           └── js/main.js
 ├── docker/metabase/               # Metabase BI dashboard
+│   ├── Dockerfile                 # Metabase image + ClickHouse driver plugin
 │   ├── bootstrap.py               # Setup automation script
 │   └── dashboard_info.json        # Output: dashboard metadata
 ├── logs/                          # Application logs
