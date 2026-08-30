@@ -2,7 +2,7 @@
 """Bootstrap Metabase with expertise dashboards.
 
 This script waits for Metabase to become available, completes the initial
-setup (if needed), creates the PostgreSQL connection, defines two gauge
+setup (if needed), creates the ClickHouse connection, defines two gauge
 questions sourced from the EXPERTISES table, and assembles them into a
 dashboard that refreshes every two minutes.
 """
@@ -45,11 +45,11 @@ LOGGER = logging.getLogger("metabase_bootstrap")
 
 
 BASE_URL = os.getenv("METABASE_BASE_URL").rstrip("/")
-POSTGRES_HOST = os.getenv("POSTGRES_HOST")
-POSTGRES_PORT = int(os.getenv("POSTGRES_PORT"))
-POSTGRES_DB = os.getenv("POSTGRES_DB")
-POSTGRES_USER = os.getenv("POSTGRES_USER")
-POSTGRES_PASSWORD = os.getenv("POSTGRES_PASSWORD")
+CLICKHOUSE_HOST = os.getenv("CLICKHOUSE_HOST")
+CLICKHOUSE_PORT = int(os.getenv("CLICKHOUSE_PORT"))
+CLICKHOUSE_DB = os.getenv("CLICKHOUSE_DB")
+CLICKHOUSE_USER = os.getenv("CLICKHOUSE_USER")
+CLICKHOUSE_PASSWORD = os.getenv("CLICKHOUSE_PASSWORD")
 
 METABASE_EMAIL = os.getenv("METABASE_EMAIL")
 METABASE_PASSWORD = os.getenv("METABASE_PASSWORD")
@@ -65,12 +65,12 @@ CARD_DEFINITIONS: List[Dict[str, Any]] = [
         "description": "Total number of expertises over time, grouped by month and status.",
         "sql": """
 SELECT
-  date_trunc('month', dt_expertise_status) AS month,
+  toStartOfMonth(dt_expertise_status) AS month,
   status,
   count(*) AS total_expertises
 FROM expertises
 GROUP BY
-  date_trunc('month', dt_expertise_status),
+  month,
   status
 ORDER BY
   month, status;
@@ -140,7 +140,7 @@ ORDER BY
     {
         "name": "Total Expertises",
         "description": "Total number of records in the EXPERTISES table.",
-        "sql": "SELECT COUNT(*)::int AS total_expertises FROM expertises;",
+        "sql": "SELECT toInt32(count(*)) AS total_expertises FROM expertises;",
         "display": "gauge",
         "position": {"col": 0, "row": 0},
     },
@@ -150,8 +150,7 @@ ORDER BY
             "Percentage of expertise records currently marked as CLOSED."
         ),
         "sql": (
-            "SELECT COALESCE(ROUND((COUNT(*) FILTER (WHERE status = 'CLOSED')::numeric / "
-            "NULLIF(COUNT(*), 0)) * 100, 2), 0) AS closed_percentage FROM expertises;"
+            "SELECT COALESCE(round(countIf(status = 'CLOSED') * 100 / nullIf(count(*), 0), 2), 0) AS closed_percentage FROM expertises;"
         ),
         "display": "gauge",
         "position": {"col": 12, "row": 0},
@@ -159,7 +158,7 @@ ORDER BY
     {
         "name": "Total Expertises Current Month",
         "description": "Total number of records in the EXPERTISES table for current month.",
-        "sql": "SELECT COUNT(*)::int AS total_expertises FROM expertises where dt_expertise_status >= date_trunc('month', CURRENT_DATE)::date;",
+        "sql": "SELECT toInt32(count(*)) AS total_expertises FROM expertises where dt_expertise_status >= toStartOfMonth(today());",
         "display": "gauge",
         "position": {"col": 0, "row": 0},
     },
@@ -169,8 +168,7 @@ ORDER BY
             "Percentage of expertise records currently marked as CLOSED for current month."
         ),
         "sql": (
-            "SELECT COALESCE(ROUND((COUNT(*) FILTER (WHERE status = 'CLOSED')::numeric / "
-            "NULLIF(COUNT(*), 0)) * 100, 2), 0) AS closed_percentage FROM expertises where dt_expertise_status >= date_trunc('month', CURRENT_DATE)::date;"
+            "SELECT COALESCE(round(countIf(status = 'CLOSED') * 100 / nullIf(count(*), 0), 2), 0) AS closed_percentage FROM expertises where dt_expertise_status >= toStartOfMonth(today());"
         ),
         "display": "gauge",
         "position": {"col": 12, "row": 0},
@@ -233,11 +231,11 @@ def run_initial_setup() -> str:
         raise RuntimeError("Unable to fetch setup token from Metabase")
 
     db_details = {
-        "host": POSTGRES_HOST,
-        "port": POSTGRES_PORT,
-        "dbname": POSTGRES_DB,
-        "user": POSTGRES_USER,
-        "password": POSTGRES_PASSWORD,
+        "host": CLICKHOUSE_HOST,
+        "port": CLICKHOUSE_PORT,
+        "dbname": CLICKHOUSE_DB,
+        "user": CLICKHOUSE_USER,
+        "password": CLICKHOUSE_PASSWORD,
         "ssl": False,
         "tunnel-enabled": False,
         "let-user-control-scheduling": False,
@@ -253,7 +251,7 @@ def run_initial_setup() -> str:
         },
         "database": {
             "name": METABASE_DB_NAME,
-            "engine": "postgres",
+            "engine": "clickhouse",
             "details": db_details,
         },
         "prefs": {
@@ -306,9 +304,9 @@ def login_or_setup() -> str:
 
 
 def ensure_database(session_id: str) -> int:
-    """Create (or reuse) the PostgreSQL database connection."""
+    """Create (or reuse) the ClickHouse database connection."""
 
-    LOGGER.info("Ensuring PostgreSQL database connection exists in Metabase")
+    LOGGER.info("Ensuring ClickHouse database connection exists in Metabase")
     response = api_request("GET", "/api/database", session_id=session_id)
     for database in response.json().get("data", []):
         if database.get("name") == METABASE_DB_NAME:
@@ -317,13 +315,13 @@ def ensure_database(session_id: str) -> int:
 
     payload = {
         "name": METABASE_DB_NAME,
-        "engine": "postgres",
+        "engine": "clickhouse",
         "details": {
-            "host": POSTGRES_HOST,
-            "port": POSTGRES_PORT,
-            "dbname": POSTGRES_DB,
-            "user": POSTGRES_USER,
-            "password": POSTGRES_PASSWORD,
+            "host": CLICKHOUSE_HOST,
+            "port": CLICKHOUSE_PORT,
+            "dbname": CLICKHOUSE_DB,
+            "user": CLICKHOUSE_USER,
+            "password": CLICKHOUSE_PASSWORD,
             "ssl": False,
             "tunnel-enabled": False,
             "let-user-control-scheduling": False,
