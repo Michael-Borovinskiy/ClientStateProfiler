@@ -96,7 +96,9 @@ services:
     network_mode: host
 
   metabase:
-    image: metabase/metabase:v0.49.14
+    build:
+      context: ./metabase
+      dockerfile: Dockerfile
     healthcheck:
       test: [ "CMD-SHELL", "wget -q --spider http://127.0.0.1:3000/api/health"]
       interval: 30s
@@ -114,7 +116,7 @@ services:
     volumes:
       - metabase_data:/metabase-data
     depends_on:
-      db_postgres_client_profiler:
+      clickhouse:
         condition: service_healthy
     network_mode: host
 
@@ -124,11 +126,11 @@ services:
     env_file:
       - .env
     environment:
-      POSTGRES_HOST: ${POSTGRES_HOST}
-      POSTGRES_PORT: ${POSTGRES_PORT}
-      POSTGRES_DB: ${POSTGRES_DB}
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      CLICKHOUSE_HOST: ${CLICKHOUSE_HOST}
+      CLICKHOUSE_PORT: ${CLICKHOUSE_PORT}
+      CLICKHOUSE_DB: ${CLICKHOUSE_DB}
+      CLICKHOUSE_USER: ${CLICKHOUSE_DEFAULT_USER}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_DEFAULT_PASSWORD}
       METABASE_BASE_URL: ${METABASE_BASE_URL}
       METABASE_PORT: ${METABASE_PORT}
       METABASE_SITE_NAME: ${METABASE_SITE_NAME}
@@ -145,6 +147,8 @@ services:
     depends_on:
       metabase:
         condition: service_started
+      clickhouse:
+        condition: service_healthy
     network_mode: host
     restart: "no"
 

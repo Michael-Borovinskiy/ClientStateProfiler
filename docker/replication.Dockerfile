@@ -7,7 +7,7 @@ WORKDIR /app
 
 RUN go build -o chug .
 
-FROM alpine:latest
+FROM alpine:3.18
 
 WORKDIR /root/
 

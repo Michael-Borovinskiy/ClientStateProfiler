@@ -2,7 +2,7 @@
 
 ## Overview
 
-**ClientStateProfiler** is an educational Java/Python microservice project for monitoring the state of financial institution clients. The system provides user management and expertise (financial monitoring) records with role-based access control, is augmented with a Metabase BI dashboard for visualizing expertise data, and replicates the expertise table to ClickHouse (OLAP) for analytical workloads.
+**ClientStateProfiler** is an educational Java/Python microservice project for monitoring the state of financial institution clients. The system provides user management and expertise (financial monitoring) records with role-based access control, is augmented with a Metabase BI dashboard (backed by ClickHouse) for visualizing expertise data, and replicates the expertise table to ClickHouse (OLAP) for analytical workloads.
 
 ---
 
@@ -24,8 +24,8 @@ System_Boundary(clientstateprofiler, "ClientStateProfiler") {
     ContainerDb(db, "PostgreSQL", "PostgreSQL 16", "Shared relational database. Stores users and expertise records", "port 15432 (host) / 5432 (container)")
     Container(ollama, "Ollama", "Ollama 0.30.10", "Local LLM inference server. Hosts qwen2.5-coder:7B model for natural language to SQL conversion", "port 11434")
     Container(dbagent, "DbAgent", "Python 3.13, Django 5, gunicorn, psycopg2, requests", "AI-powered database agent. Web UI + CLI. Converts natural language queries to SQL, executes them, and summarizes results", "port 8080 (web), 8086 (compose)")
-    Container(metabase, "Metabase", "Metabase v0.49.14", "BI and analytics platform. Hosts dashboards with gauge visualizations of expertise data", "port 3000")
-    Container(metabase_bootstrap, "MetabaseBootstrap", "Python 3.12, requests", "Automates Metabase setup: creates PostgreSQL connection, gauge cards, and dashboard for expertise monitoring", "ephemeral")
+    Container(metabase, "Metabase", "Metabase v0.49.14 + ClickHouse driver 1.5.1", "BI and analytics platform. Hosts dashboards with gauge visualizations of expertise data", "port 3000")
+    Container(metabase_bootstrap, "MetabaseBootstrap", "Python 3.12, requests", "Automates Metabase setup: creates ClickHouse connection, gauge cards, and dashboard for expertise monitoring", "ephemeral")
     Container(clickhouse, "ClickHouse", "ClickHouse 24.3", "OLAP columnar database. Stores a replicated copy of the EXPERTISES table for analytical workloads", "port 8123 (HTTP), 9000 (native)")
     Container(chug, "Chug", "Go (chug binary)", "Periodically replicates the EXPERTISES table from PostgreSQL to ClickHouse (every 240 seconds)", "long-running")
 }
@@ -43,14 +43,14 @@ Rel(dbagent, ollama, "HTTP (REST API)", "/api/generate")
 Rel(browser_agent, dbagent, "HTTP (chat UI)", "localhost:8080")
 Rel(operator, dbagent, "stdin/stdout", "natural language queries (CLI mode)")
 Rel(metabase_bootstrap, metabase, "HTTP (REST API)", "localhost:3000")
-Rel(metabase, db, "JDBC", "read EXPERTISES for dashboards")
+Rel(metabase, clickhouse, "HTTP (ClickHouse driver)", "read EXPERTISES for dashboards")
 
 Rel_U(gateway, migration, "depends on (docker-compose)", "")
 Rel_U(expertise, migration, "depends on (docker-compose)", "")
 Rel_U(dbagent, ollama, "depends on (docker-compose)", "")
 Rel_U(dbagent, migration, "depends on (docker-compose)", "")
-Rel_U(metabase, migration, "depends on (docker-compose)", "")
-Rel_U(metabase_bootstrap, migration, "depends on (docker-compose)", "")
+Rel_U(metabase, clickhouse, "depends on (docker-compose)", "")
+Rel_U(metabase_bootstrap, clickhouse, "depends on (docker-compose)", "")
 Rel_U(metabase_bootstrap, metabase, "depends on (docker-compose)", "")
 Rel(chug, db, "JDBC (psycopg2)", "read EXPERTISES every 240s")
 Rel(chug, clickhouse, "native protocol (clickhouse-driver)", "INSERT EXPERTISES")
@@ -223,25 +223,25 @@ Rel_U(chug, clickhouse, "depends on (docker-compose)", "")
 | Characteristic | Value |
 |---|---|
 | Port | `3000` (host networking) |
-| Image | `metabase/metabase:v0.49.14` |
+| Image | `docker/metabase/Dockerfile` (Metabase v0.49.14 + ClickHouse driver 1.5.1) |
 | Type | **Persistent** (metabase_data volume for application DB) |
-| Dependency | Starts after PostgreSQL is healthy |
+| Dependency | Starts after ClickHouse is healthy |
 
-**Purpose:** Self-service BI and analytics platform that connects to the shared PostgreSQL database and provides interactive dashboards for monitoring expertise data. The expertise health dashboard displays gauge cards visualizing key metrics from the `EXPERTISES` table.
+**Purpose:** Self-service BI and analytics platform that connects to the shared ClickHouse database and provides interactive dashboards for monitoring expertise data. The expertise health dashboard displays gauge cards visualizing key metrics from the `EXPERTISES` table.
 
 **Responsibilities:**
-- Hosts a PostgreSQL database connection to the shared `EXPERTISES` table
+- Hosts a ClickHouse database connection to the replicated `EXPERTISES` table
 - Serves BI dashboards with real-time gauge visualizations
 - Provides a web-based analytics UI for operational monitoring
 
 **Dashboard — Expertise Health Overview:**
 | Card | SQL Query | Display |
 |---|---|---|
-| Total Expertises Over Time (Monthly) | `SELECT date_trunc('month', dt_expertise_status) AS month, status, count(*) AS total_expertises FROM expertises GROUP BY date_trunc('month', dt_expertise_status), status ORDER BY month, status;` | Line chart showing expertise count over time, grouped by month and status |
-| Total Expertises | `SELECT COUNT(*)::int AS total_expertises FROM expertises;` | Gauge showing total record count |
-| Closed Expertises (%) | `SELECT COALESCE(ROUND((COUNT(*) FILTER (WHERE status = 'CLOSED')::numeric / NULLIF(COUNT(*), 0)) * 100, 2), 0) AS closed_percentage FROM expertises;` | Gauge showing percentage of closed records |
-| Total Expertises Current Month | `SELECT COUNT(*)::int AS total_expertises FROM expertises where dt_expertise_status >= date_trunc('month', CURRENT_DATE)::date;` | Gauge showing total record count for the current month |
-| Closed Expertises Current Month (%) | `SELECT COALESCE(ROUND((COUNT(*) FILTER (WHERE status = 'CLOSED')::numeric / NULLIF(COUNT(*), 0)) * 100, 2), 0) AS closed_percentage FROM expertises where dt_expertise_status >= date_trunc('month', CURRENT_DATE)::date;` | Gauge showing percentage of closed records for the current month |
+| Total Expertises Over Time (Monthly) | `SELECT toStartOfMonth(dt_expertise_status) AS month, status, count(*) AS total_expertises FROM expertises GROUP BY month, status ORDER BY month, status;` | Line chart showing expertise count over time, grouped by month and status |
+| Total Expertises | `SELECT toInt32(count(*)) AS total_expertises FROM expertises;` | Gauge showing total record count |
+| Closed Expertises (%) | `SELECT COALESCE(round(countIf(status = 'CLOSED') * 100 / nullIf(count(*), 0), 2), 0) AS closed_percentage FROM expertises;` | Gauge showing percentage of closed records |
+| Total Expertises Current Month | `SELECT toInt32(count(*)) AS total_expertises FROM expertises WHERE dt_expertise_status >= toStartOfMonth(today());` | Gauge showing total record count for the current month |
+| Closed Expertises Current Month (%) | `SELECT COALESCE(round(countIf(status = 'CLOSED') * 100 / nullIf(count(*), 0), 2), 0) AS closed_percentage FROM expertises WHERE dt_expertise_status >= toStartOfMonth(today());` | Gauge showing percentage of closed records for the current month |
 
 ---
 
@@ -252,14 +252,14 @@ Rel_U(chug, clickhouse, "depends on (docker-compose)", "")
 | Image | `python:3.12-slim` (inline command) |
 | Script | `docker/metabase/bootstrap.py` |
 | Type | **Ephemeral** (terminates after setup completes) |
-| Dependency | Starts after Metabase is started (no healthcheck required) |
+| Dependency | Starts after Metabase is started and ClickHouse is healthy |
 
 **Purpose:** Automates the initial configuration of Metabase so that dashboards are ready immediately without manual setup. The bootstrap script is written in Python 3.12 and uses the `requests` library to interact with the Metabase REST API.
 
 **Workflow (`bootstrap.py`):**
 1. **Wait for Metabase** — polls `/api/health` until Metabase reports `status: "ok"` (timeout: 600 seconds)
-2. **Login or Setup** — attempts to authenticate with existing credentials; if that fails and a `setup-token` is available, runs the first-time setup (creates admin user, configures PostgreSQL database connection, sets site preferences)
-3. **Ensure Database** — checks `/api/database` for an existing PostgreSQL connection; creates one if not found
+2. **Login or Setup** — attempts to authenticate with existing credentials; if that fails and a `setup-token` is available, runs the first-time setup (creates admin user, configures ClickHouse database connection, sets site preferences)
+3. **Ensure Database** — checks `/api/database` for an existing ClickHouse connection; creates one if not found
 4. **Create Cards** — for each definition in `CARD_DEFINITIONS`:
    - Checks if a card with the same name already exists via `/api/search`
    - If not, creates a native SQL question (card) with the specified display type (gauge or line chart)
@@ -283,9 +283,9 @@ Rel_U(chug, clickhouse, "depends on (docker-compose)", "")
 | Ports | `8123` (HTTP), `9000` (native) |
 | Volume | `clickhouse_data` (persistent) |
 | Type | **Persistent** |
-| Dependency | None (independent of PostgreSQL) |
+| Dependency | None (independent of PostgreSQL); serves Metabase dashboard queries |
 
-**Purpose:** OLAP columnar database that stores a replicated snapshot of the `EXPERTISES` table for analytical workloads, offloading analytics from the transactional PostgreSQL database.
+**Purpose:** OLAP columnar database that stores a replicated snapshot of the `EXPERTISES` table for analytical workloads, offloading analytics from the transactional PostgreSQL database. Metabase dashboards read this data via the bundled ClickHouse driver.
 
 **ClickHouse table (created automatically by chug):**
 
@@ -324,7 +324,7 @@ ORDER BY dt_expertise_status
 | File | Purpose |
 |---|---|
 | `docker/.chug.yaml` | Chug configuration: batch size, table definitions, polling interval |
-| `docker/replication.Dockerfile` | Multi-stage build: compiles the `chug` Go binary from source, runs in Alpine |
+| `docker/replication.Dockerfile` | Multi-stage build: compiles the `chug` Go binary from source, runs in Alpine 3.18 |
 
 ---
 
@@ -433,8 +433,8 @@ spring:
 | `gateway_app` | `../GatewayApp/` | build | `8085:8085` | db (healthy), expertise |
 | `ollama` | — | `ollama/ollama:0.30.10` | `11434:11434` | db (healthy) |
 | `db_agent` | `../DbAgent/` | build | `8086:8086` (host networking, app listens on `8080`) | db (healthy), ollama (healthy) |
-| `metabase` | — | `metabase/metabase:v0.49.14` | `3000` (host networking) | db (healthy) |
-| `metabase_bootstrap` | `..` (root) | `python:3.12-slim` (inline) | — | metabase (started) |
+| `metabase` | `..` (root, `docker/metabase/Dockerfile`) | `metabase/metabase:v0.49.14` + ClickHouse driver 1.5.1 | `3000` (host networking) | clickhouse (healthy) |
+| `metabase_bootstrap` | `..` (root) | `python:3.12-slim` (inline) | — | metabase (started), clickhouse (healthy) |
 | `clickhouse` | — | `clickhouse/clickhouse-server:24.3` | `8123:8123`, `9000:9000` | — |
 | `chug` | `.` (docker/) | `replication.Dockerfile` (Go build) | host networking | db (healthy), clickhouse (healthy) |
 
@@ -442,6 +442,8 @@ spring:
 ### Multi-stage Dockerfile
 - All services use multi-stage build: **build** (maven:3-eclipse-temurin-17) → **runtime** (openjdk:17)
 - Migrations run via Flyway on `MigrationService` startup
+- `docker/replication.Dockerfile` builds the `chug` binary in **build** (golang:1.23-alpine) → **runtime** (alpine:3.18)
+- `docker/metabase/Dockerfile` packages Metabase v0.49.14 with the ClickHouse JDBC driver 1.5.1 pre-installed
 
 ---
 
@@ -512,6 +514,7 @@ spring:
 | **Ollama** | **0.30.10** | **Local LLM inference server (DbAgent dependency)** |
 | **qwen2.5-coder:7B** | — | **LLM model for natural language → SQL (DbAgent)** |
 | **Metabase** | **0.49.14** | **BI and analytics platform for expertise dashboards** |
+| **Metabase ClickHouse driver** | **1.5.1** | **JDBC plugin added to the Metabase image via `docker/metabase/Dockerfile`** |
 | **Python** | **3.12** | **Development language (MetabaseBootstrap)** |
 | **requests** | — | **HTTP client for Metabase API (MetabaseBootstrap)** |
 | **ClickHouse** | **24.3** | **OLAP columnar database for analytical replication of EXPERTISES** |
